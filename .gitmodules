@@ -1,0 +1,3 @@
+[submodule "baseframework"]
+	path = baseframework
+	url = https://gitlab2.cip.ifi.lmu.de/dbs_sep/dbs_streamclustering26/main-group/baseframework.git
