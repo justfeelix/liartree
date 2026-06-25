@@ -32,9 +32,10 @@ class Node:
     node at once when it is descended into (Sec. 3.2).
     """
 
-    def __init__(self, is_leaf=False, parent_entry=None, timestamp=0):
+    def __init__(self, is_leaf=False, parent=None, parent_entry=None, timestamp=0):
         self.entries = []                 # list[Entry]
         self.is_leaf = is_leaf
+        self.parent = parent              # parent Node (None at the root)
         self.parent_entry = parent_entry  # entry in the parent node pointing here
         self.timestamp = timestamp
 

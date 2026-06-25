@@ -66,6 +66,12 @@ class MicroCluster:
         self.ss += other.ss
         self.timestamp = max(self.timestamp, other.timestamp)
 
+    def subtract(self, other):
+        """Remove another CF's contribution in place (used by the discard rule)."""
+        self.n -= other.n
+        self.ls = self.ls - other.ls
+        self.ss = self.ss - other.ss
+
     def copy(self):
         return MicroCluster(self.n, self.ls.copy(), self.ss.copy(), self.timestamp)
 
