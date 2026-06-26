@@ -40,11 +40,16 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
         LiarTree uses the same unit, so the two stay comparable.
     max_height : cap on tree height (0 = unbounded). Once reached, leaf overflow
         merges instead of splitting, so the model size stops growing.
+    aggregate : speed-up for very fast streams (Sec. 3.3). Groups similar
+        incoming objects and inserts whole aggregates so each insertion can
+        descend deeper.
+    max_aggregates : cap on the number of open aggregates.
     """
 
     def __init__(self, max_fanout=3, min_fanout=1, leaf_capacity_max=3,
                  leaf_capacity_min=1, lam=0.001, horizon=1000,
-                 descent="depthfirst", budget=36, max_height=0):
+                 descent="depthfirst", budget=36, max_height=0,
+                 aggregate=False, max_aggregates=20):
         if descent not in _DESCENTS:
             raise ValueError("descent must be one of %s" % (_DESCENTS,))
         self.max_fanout = max_fanout
@@ -56,6 +61,8 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
         self.descent = descent
         self.budget = budget
         self.max_height = max_height
+        self.aggregate = aggregate
+        self.max_aggregates = max_aggregates
 
         self.root = Node(is_leaf=True, timestamp=0)
         self.merge_list = []
@@ -63,7 +70,14 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
         self._next_id = 0
         self._dim = None
         self._dist_used = 0
+        self._cur_budget = budget
         self._height = 1
+
+        # aggregation state (Sec. 3.3)
+        self._aggregates = []       # list of [cf, age]
+        self._agg_counter = 0
+        self._pool_budget = 0.0
+        self._maxradius = 0.0
 
     def learn_one(self, x, t=None):
         """Insert one object. Returns (summary_id, cluster_id, event_log) as the
@@ -71,16 +85,78 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
         if t is None:
             t = self._time + 1
         self._time = t
-        self._dist_used = 0
 
         x = np.asarray(x, dtype=float)
         if self._dim is None:
             self._dim = x.size
         x_cf = MicroCluster.from_point(x, t)
 
+        if self.aggregate:
+            return self._aggregate_and_insert(x_cf, t)
+        self._cur_budget = self.budget
+        self._dist_used = 0
+        return self._insert(x_cf, t)
+
+    def _insert(self, cf, t):
         if self.descent == "depthfirst":
-            return self._insert_depth_first(x_cf, t)
-        return self._insert_via_search(x_cf, t)
+            return self._insert_depth_first(cf, t)
+        return self._insert_via_search(cf, t)
+
+    # --- speed-up through aggregation for very fast streams (Sec. 3.3) ----
+    def _aggregate_and_insert(self, x_cf, t):
+        """Group similar incoming objects into aggregates and insert a whole
+        aggregate once enough budget has built up, so that insertion can descend
+        deep instead of being interrupted near the root."""
+        self._pool_budget = min(self._pool_budget + self.budget, self._descent_cost())
+        self._add_to_aggregate(x_cf)
+
+        assigned, log = -1, ""
+        if self._aggregates and self._pool_budget >= self._descent_cost():
+            agg = self._pop_fullest_aggregate()
+            agg.decay(t, self.lam)      # bring the aggregate to the current time
+            self._cur_budget = self._pool_budget
+            self._dist_used = 0
+            assigned, _, log = self._insert(agg, t)
+            self._pool_budget -= self._dist_used
+            self._maxradius = self._avg_leaf_radius()
+        return assigned, -1, log
+
+    def _descent_cost(self):
+        # rough distance-computation cost of descending to a leaf
+        return max(1, self._height * self.max_fanout)
+
+    def _add_to_aggregate(self, x_cf):
+        # maxradius = average leaf radius; an object within it joins the closest
+        # aggregate, otherwise a new aggregate opens (up to max_aggregates)
+        target = x_cf.mean()
+        if self._aggregates:
+            dists = [utils.distance_calc(target, a[0].mean()) for a in self._aggregates]
+            j = int(np.argmin(dists))
+            if dists[j] <= self._maxradius or len(self._aggregates) >= self.max_aggregates:
+                self._aggregates[j][0].decay(x_cf.timestamp, self.lam)
+                self._aggregates[j][0].add(x_cf)
+                return
+        self._aggregates.append([x_cf.copy(), self._agg_counter])
+        self._agg_counter += 1
+
+    def _pop_fullest_aggregate(self):
+        # fullest first, ties broken by oldest
+        i = max(range(len(self._aggregates)),
+                key=lambda k: (self._aggregates[k][0].n, -self._aggregates[k][1]))
+        cf, _age = self._aggregates.pop(i)
+        return cf
+
+    def _avg_leaf_radius(self):
+        radii = []
+        stack = [self.root]
+        while stack:
+            nd = stack.pop()
+            if nd.is_leaf:
+                radii.extend(e.summary.radius() for e in nd.entries
+                             if not e.summary.is_empty())
+            else:
+                stack.extend(e.child for e in nd.entries if e.child)
+        return float(np.mean(radii)) if radii else 0.0
 
     def get_summary(self):
         """Leaf-level micro-clustering as {id: {position, radius, weight}}."""
@@ -290,7 +366,7 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
         return utils.distance_calc(a, b)
 
     def _time_is_up(self):
-        return self._dist_used >= self.budget
+        return self._dist_used >= self._cur_budget
 
     def _on_descend(self, node, t):
         """Decay every entry summary and buffer in node to time t (Sec. 3.2)."""

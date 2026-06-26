@@ -40,6 +40,11 @@ def build_arg_parser():
     p.add_argument("--max-height", type=int, default=0,
                    help="cap tree height (0 = unbounded); once reached the model "
                         "size stops growing")
+    p.add_argument("--aggregate", action="store_true",
+                   help="aggregate similar objects before insertion (Sec. 3.3 "
+                        "speed-up for very fast streams)")
+    p.add_argument("--max-aggregates", type=int, default=20,
+                   help="cap on the number of open aggregates")
     p.add_argument("--descent", default="depthfirst",
                    choices=["depthfirst", "breadthfirst", "bestfirst", "iterativedf"])
 
@@ -67,7 +72,8 @@ def main():
     X, y = load_dataset(args.dataset, scale=not args.no_scale)
     tree = ClusTree(max_fanout=args.max_fanout, leaf_capacity_max=args.leaf_max,
                     lam=args.lam, horizon=args.horizon, descent=args.descent,
-                    budget=args.budget, max_height=args.max_height)
+                    budget=args.budget, max_height=args.max_height,
+                    aggregate=args.aggregate, max_aggregates=args.max_aggregates)
     offline = OfflineClusterer(method=args.offline, n_clusters=args.n_clusters,
                                eps=args.eps, min_samples=args.min_samples,
                                weighted=not args.unweighted, random_state=args.seed)
