@@ -5,9 +5,15 @@ the four descent strategies (Sec. 3.4) live here; the data structures are in
 microcluster.py and node.py. Written so the LiarTree can subclass it and only
 override the descent / leaf / split hooks (see liartree.py).
 
-Only depth-first descent is wired up so far.
+Depth-first does the full buffer + hitchhiker descent. The other three
+strategies (breadth-first, best-first, iterative depth-first) share a search +
+finalize model: explore within the distance budget to pick a leaf, then update
+the path and insert there (or buffer if the budget ran out first).
 """
 from __future__ import annotations
+
+import heapq
+import itertools
 
 import numpy as np
 
@@ -16,6 +22,8 @@ import utils               # baseframework euclidean distance
 
 from .node import Node, Entry
 from .microcluster import MicroCluster
+
+_DESCENTS = ("depthfirst", "breadthfirst", "bestfirst", "iterativedf")
 
 
 class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
@@ -27,16 +35,18 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
     leaf_capacity_max, leaf_capacity_min : L / l for leaf nodes.
     lam : decay rate of omega(t) = 2^(-lambda*t) (Sec. 3.2).
     horizon : snapshot interval t_snap for the discard rule (Eq. 1).
-    descent : "depthfirst" | "breadthfirst" | "bestfirst" | "iterativedf".
+    descent : one of depthfirst / breadthfirst / bestfirst / iterativedf.
     budget : max distance computations per object (low = fast stream). The
         LiarTree uses the same unit, so the two stay comparable.
+    max_height : cap on tree height (0 = unbounded). Once reached, leaf overflow
+        merges instead of splitting, so the model size stops growing.
     """
 
     def __init__(self, max_fanout=3, min_fanout=1, leaf_capacity_max=3,
                  leaf_capacity_min=1, lam=0.001, horizon=1000,
-                 descent="depthfirst", budget=36):
-        if descent != "depthfirst":
-            raise NotImplementedError("only depth-first descent is wired up so far")
+                 descent="depthfirst", budget=36, max_height=0):
+        if descent not in _DESCENTS:
+            raise ValueError("descent must be one of %s" % (_DESCENTS,))
         self.max_fanout = max_fanout
         self.min_fanout = min_fanout
         self.leaf_max = leaf_capacity_max
@@ -45,6 +55,7 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
         self.horizon = horizon
         self.descent = descent
         self.budget = budget
+        self.max_height = max_height
 
         self.root = Node(is_leaf=True, timestamp=0)
         self.merge_list = []
@@ -52,10 +63,11 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
         self._next_id = 0
         self._dim = None
         self._dist_used = 0
+        self._height = 1
 
     def learn_one(self, x, t=None):
-        """Insert one object (Alg. Fig. 4). Returns (summary_id, cluster_id,
-        event_log) as the baseframework expects."""
+        """Insert one object. Returns (summary_id, cluster_id, event_log) as the
+        baseframework expects."""
         if t is None:
             t = self._time + 1
         self._time = t
@@ -66,6 +78,35 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
             self._dim = x.size
         x_cf = MicroCluster.from_point(x, t)
 
+        if self.descent == "depthfirst":
+            return self._insert_depth_first(x_cf, t)
+        return self._insert_via_search(x_cf, t)
+
+    def get_summary(self):
+        """Leaf-level micro-clustering as {id: {position, radius, weight}}."""
+        summary = {}
+        stack = [self.root]
+        while stack:
+            node = stack.pop()
+            if node.is_leaf:
+                for e in node.entries:
+                    if not e.summary.is_empty():
+                        # weight decayed to the current time so all entries are
+                        # reported as one snapshot (mean/radius are decay-invariant)
+                        w = e.summary.n * 2.0 ** (-self.lam * (self._time - e.summary.timestamp))
+                        summary[e.id] = {
+                            "position": e.summary.mean(),
+                            "radius": e.summary.radius(),
+                            "weight": w,
+                        }
+            else:
+                for e in node.entries:
+                    if e.child is not None:
+                        stack.append(e.child)
+        return summary
+
+    # --- depth-first descent (buffer + hitchhiker) -----------------------
+    def _insert_depth_first(self, x_cf, t):
         node = self.root
         h = None            # hitchhiker CF travelling with x
         path = []           # entries chosen on the way down (for the discard rule)
@@ -112,28 +153,133 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
 
         return assigned, -1, ";".join(events)
 
-    def get_summary(self):
-        """Leaf-level micro-clustering as {id: {position, radius, weight}}."""
-        summary = {}
-        stack = [self.root]
-        while stack:
-            node = stack.pop()
+    # --- alternative strategies (search + finalize) ----------------------
+    def _insert_via_search(self, x_cf, t):
+        events = []
+        self._on_descend(self.root, t)
+        if self.root.is_leaf:
+            leaf_node, buf, can_split = self.root, None, None
+        elif self.descent == "bestfirst":
+            leaf_node, buf, can_split = self._search_best_first(x_cf)
+        elif self.descent == "breadthfirst":
+            leaf_node, buf, can_split = self._search_breadth_first(x_cf)
+        else:                                       # iterativedf
+            leaf_node, buf, can_split = self._search_iterative_df(x_cf)
+        assigned = self._finalize_search(leaf_node, buf, x_cf, events, can_split)
+        return assigned, -1, ";".join(events)
+
+    def _finalize_search(self, leaf_node, buf, x_cf, events, can_split):
+        if leaf_node is not None:
+            path = self._path_to(leaf_node)
+            for e in path:
+                e.summary.add(x_cf)
+            return self._leaf_proc(leaf_node, x_cf, None, path, events, can_split)
+        if buf is not None and buf[0] is not None:
+            entry, node = buf
+            for e in self._path_to(node):
+                e.summary.add(x_cf)
+            entry.summary.add(x_cf)
+            entry.buffer.add(x_cf)
+            events.append("buffered")
+        return -1
+
+    def _search_best_first(self, x_cf):
+        """Refine the globally closest unrefined entry first; the first leaf
+        entry reached is the target."""
+        target = x_cf.mean()
+        order = itertools.count()
+        pq = []
+        for e in self.root.entries:
+            if not e.summary.is_empty():
+                heapq.heappush(pq, (self._dist(target, e.summary.mean()), next(order), e, self.root))
+
+        while pq and not self._time_is_up():
+            _, _, e, node = heapq.heappop(pq)
+            if e.child is None:
+                return node, None, None
+            child = e.child
+            self._on_descend(child, self._time)
+            for ce in child.entries:
+                if not ce.summary.is_empty():
+                    heapq.heappush(pq, (self._dist(target, ce.summary.mean()),
+                                        next(order), ce, child))
+
+        if pq:
+            _, _, e, node = pq[0]
+            if e.child is None:
+                return node, None, None
+            return None, (e, node), None
+        return None, None, None
+
+    def _search_breadth_first(self, x_cf):
+        """Evaluate the tree level by level; the closest leaf entry is the
+        target."""
+        target = x_cf.mean()
+        level = [(self._dist(target, e.summary.mean()), e, self.root)
+                 for e in self.root.entries if not e.summary.is_empty()]
+
+        while level and not self._time_is_up():
+            level.sort(key=lambda it: it[0])
+            if level[0][1].child is None:           # reached the leaf level
+                return level[0][2], None, None
+            nxt = []
+            for _, e, _node in level:
+                child = e.child
+                self._on_descend(child, self._time)
+                for ce in child.entries:
+                    if not ce.summary.is_empty():
+                        nxt.append((self._dist(target, ce.summary.mean()), ce, child))
+            level = nxt
+
+        if level:
+            level.sort(key=lambda it: it[0])
+            _, e, node = level[0]
+            if e.child is None:
+                return node, None, None
+            return None, (e, node), None
+        return None, None, None
+
+    def _search_iterative_df(self, x_cf):
+        """Greedy depth-first first, then check siblings level by level while
+        the budget lasts and keep the closest leaf."""
+        kind, node, entry, dist = self._greedy_descent(self.root, x_cf)
+        if kind == "buffer":
+            return None, (entry, node), None
+        # decide the split now, like depth-first, before the sibling search below
+        # spends the rest of the budget
+        can_split = not self._time_is_up()
+        best_leaf, best_dist = node, dist
+
+        level = 0
+        while not self._time_is_up():
+            path = self._node_path_to(best_leaf)
+            if level >= len(path) - 1:              # only inner levels have siblings to try
+                break
+            cur, nxt = path[level], path[level + 1]
+            for e in cur.entries:
+                if self._time_is_up():
+                    break
+                if e.child is nxt or e.child is None or e.summary.is_empty():
+                    continue
+                k, nd, _en, d = self._greedy_descent(e.child, x_cf)
+                if k == "leaf" and d < best_dist:
+                    best_leaf, best_dist = nd, d
+            level += 1
+        return best_leaf, None, can_split
+
+    def _greedy_descent(self, node, x_cf):
+        """Descend by closest entry to a leaf. Returns ("leaf", leaf_node,
+        leaf_entry, dist) or ("buffer", node, entry, None) if interrupted."""
+        while True:
+            self._on_descend(node, self._time)
+            e, d = self._closest(node, x_cf)
+            if e is None:
+                return "buffer", node, None, None
             if node.is_leaf:
-                for e in node.entries:
-                    if not e.summary.is_empty():
-                        # weight decayed to the current time so all entries are
-                        # reported as one snapshot (mean/radius are decay-invariant)
-                        w = e.summary.n * 2.0 ** (-self.lam * (self._time - e.summary.timestamp))
-                        summary[e.id] = {
-                            "position": e.summary.mean(),
-                            "radius": e.summary.radius(),
-                            "weight": w,
-                        }
-            else:
-                for e in node.entries:
-                    if e.child is not None:
-                        stack.append(e.child)
-        return summary
+                return "leaf", node, e, d
+            if self._time_is_up():
+                return "buffer", node, e, None
+            node = e.child
 
     # --- budget and decay ------------------------------------------------
     def _dist(self, a, b):
@@ -155,8 +301,8 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
         node.timestamp = t
 
     # --- hooks the LiarTree overrides ------------------------------------
-    def _calc_closest_entry(self, node, cf):
-        """Entry of node whose mean is closest to cf (Sec. 3.1)."""
+    def _closest(self, node, cf):
+        """Closest entry of node to cf and its distance (None, inf if empty)."""
         target = cf.mean()
         best, best_d = None, np.inf
         for e in node.entries:
@@ -165,11 +311,18 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
             d = self._dist(target, e.summary.mean())
             if d < best_d:
                 best_d, best = d, e
-        return best
+        return best, best_d
 
-    def _leaf_proc(self, node, x_cf, h, path, events):
+    def _calc_closest_entry(self, node, cf):
+        """Entry of node whose mean is closest to cf (Sec. 3.1)."""
+        return self._closest(node, cf)[0]
+
+    def _leaf_proc(self, node, x_cf, h, path, events, can_split=None):
         """Insert x (and the hitchhiker) as leaf entries, then resolve overflow
-        by discarding, splitting, or merging."""
+        by discarding, splitting, or merging. can_split defaults to "budget left"
+        (depth-first); the search strategies decide it themselves."""
+        if can_split is None:
+            can_split = not self._time_is_up()
         entry = self._new_leaf_entry(x_cf)
         node.entries.append(entry)
         if h is not None:
@@ -178,7 +331,8 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
         while len(node.entries) > self.leaf_max:
             if self._discard_insignificant(node, path, events):
                 continue
-            if not self._time_is_up():
+            capped = self.max_height and self._height >= self.max_height
+            if can_split and not capped:
                 self._split(node, events)
                 break
             self._merge_closest(node, events)
@@ -208,6 +362,7 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
             sibling.parent, sibling.parent_entry = new_root, eB
             new_root.entries = [eA, eB]
             self.root = new_root
+            self._height += 1
             events.append("split_root")
             return
 
@@ -237,6 +392,26 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
             s.add(e.summary)
         s.timestamp = t
         return s
+
+    def _path_to(self, node):
+        """Entries from the root down to (and pointing at) node."""
+        path = []
+        nd = node
+        while nd.parent_entry is not None:
+            path.append(nd.parent_entry)
+            nd = nd.parent
+        path.reverse()
+        return path
+
+    def _node_path_to(self, node):
+        """Nodes from the root down to node."""
+        nodes = []
+        nd = node
+        while nd is not None:
+            nodes.append(nd)
+            nd = nd.parent
+        nodes.reverse()
+        return nodes
 
     def _best_split(self, entries):
         means = [e.summary.mean() for e in entries]

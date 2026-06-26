@@ -37,6 +37,9 @@ def build_arg_parser():
     p.add_argument("--leaf-max", type=int, default=3)
     p.add_argument("--lambda", dest="lam", type=float, default=0.001)
     p.add_argument("--horizon", type=int, default=1000)
+    p.add_argument("--max-height", type=int, default=0,
+                   help="cap tree height (0 = unbounded); once reached the model "
+                        "size stops growing")
     p.add_argument("--descent", default="depthfirst",
                    choices=["depthfirst", "breadthfirst", "bestfirst", "iterativedf"])
 
@@ -64,7 +67,7 @@ def main():
     X, y = load_dataset(args.dataset, scale=not args.no_scale)
     tree = ClusTree(max_fanout=args.max_fanout, leaf_capacity_max=args.leaf_max,
                     lam=args.lam, horizon=args.horizon, descent=args.descent,
-                    budget=args.budget)
+                    budget=args.budget, max_height=args.max_height)
     offline = OfflineClusterer(method=args.offline, n_clusters=args.n_clusters,
                                eps=args.eps, min_samples=args.min_samples,
                                weighted=not args.unweighted, random_state=args.seed)
