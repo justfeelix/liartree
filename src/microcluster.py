@@ -88,7 +88,7 @@ class MicroCluster:
             return 0.0
         r = self.radius()
         C_d = (math.pi ** (d / 2)) / math.gamma(d / 2 + 1)
-        return C_d * (r ** d)
+        return C_d * (r ** d) # TODO be careful for high-dimensional data r^d can overflow or underflip
 
     def density(self):
         v = self.volume()
