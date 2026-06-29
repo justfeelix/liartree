@@ -48,7 +48,7 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
           • liar hook at the top of each iteration (Task 3)
           • the enc_split flag, set by _calc_closest_entry when an irrelevant
             entry is found; once True it stays True for the rest of the descent (Task4)
-          • noise check after finding the closest entry (Task 2)
+          • noise check BEFORE leaf check, matching Algorithm 1's order (Task 2)
         """
         node = self.root
         h = None        # hitchhiker CF
@@ -66,15 +66,22 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
                 break
             # ─────────────────────────────────────────────────────────────
 
-            if node.is_leaf:
-                assigned = self._leaf_proc(node, x_cf, h, path, events)
-                break
-
             ex = self._calc_closest_entry(node, x_cf)
             if ex is None:
                 break
 
-            # ── Task 2 (Felix): noise check ──────────────────────────────
+            # hitchhiker logic — at inner nodes only, BEFORE noise check
+            # (Algorithm 1 routes h before the noise test; _leaf_proc handles
+            # h at leaf level so we skip the deposit there to avoid buffer=None)
+            if not node.is_leaf and h is not None:
+                eh = self._calc_closest_entry(node, h)
+                if eh is ex:
+                    ex.summary.add(h)
+                else:
+                    self._deposit(eh, h)
+                    h = None
+
+            # ── Task 2 (Felix): noise check — BEFORE leaf check (Alg. 1) ─
             np_score = noise_probability(x_cf.mean(), node.entries, self._dist)
             if np_score >= self.noise_threshold:
                 self._noise_proc(x_cf, node, t, enc_split=self._enc_split,
@@ -83,14 +90,10 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
                 break   # point consumed by noise buffer; stop descent
             # ─────────────────────────────────────────────────────────────
 
-            # hitchhiker logic (unchanged from ClusTree)
-            if h is not None:
-                eh = self._calc_closest_entry(node, h)
-                if eh is ex:
-                    ex.summary.add(h)
-                else:
-                    self._deposit(eh, h)
-                    h = None
+            # Leaf insertion — AFTER noise check (Algorithm 1)
+            if node.is_leaf:
+                assigned = self._leaf_proc(node, x_cf, h, path, events)
+                break
 
             ex.summary.add(x_cf)
             path.append(ex)
