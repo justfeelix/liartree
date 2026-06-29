@@ -1,9 +1,8 @@
 """LiarTree online phase extensions.
 
-This class builds on :class:`ClusTree` and adds the overlap-reduction look-ahead
-used during entry selection. Noise handling and liar-node growth are still
-separate extension points; when those steps land, they can compose with
-``_select_with_overlap_reduction`` from ``_calc_closest_entry``.
+Extends ClusTree with per-node noise buffers, Gompertz-based
+noise-to-cluster events, and local overlap-reduction look-ahead during entry
+selection.
 """
 from __future__ import annotations
 
@@ -11,27 +10,125 @@ import numpy as np
 
 from .clustree import ClusTree
 from .microcluster import MicroCluster
+from .node import Entry, Node
+from .noise_handler import noise_to_cluster_test
 
 
 class LiarTree(ClusTree):
-    def __init__(self, *args, noise_threshold=None, overlap_reduction=True, **kwargs):
+    """ClusTree extended with noise buffers and overlap-aware routing.
+
+    Parameters
+    ----------
+    noise_threshold : float in [0, 1] or None
+        A point is classified as noise when its noise probability is greater
+        than or equal to this threshold. Use None to disable noise gating.
+    overlap_reduction : bool
+        Enable the local overlap look-ahead and child-entry swap.
+    """
+
+    def __init__(self, *args, noise_threshold: float | None = 0.5,
+                 overlap_reduction: bool = True, **kwargs):
         super().__init__(*args, **kwargs)
         self.noise_threshold = noise_threshold
         self.overlap_reduction = overlap_reduction
+        self._enc_split = False
+        self._last_cf_is_noise = False
+        self._last_noise_probability = 0.0
 
-    # TODO: override learn_one to follow Algorithm 1 [Sec. 2.1]
-    # TODO: add noise marking around this selection hook [Sec. 2.2, Def. 2, Fig. 1]
-    # TODO: noise_proc, noise buffer -> new cluster via the gompertz test [Sec. 2.3, Def. 3-4]
-    # TODO: liar_proc, grow the subtree top-down [Alg. 2, Sec. 2.4]
-    # TODO: override _leaf_proc to allow encouraged splits [Sec. 2.5]
+    # Main LiarTree addition to ClusTree: descent override with liar and noise.
+    def _insert_depth_first(self, x_cf: MicroCluster, t: int):
+        node = self.root
+        h = None
+        path = []
+        events = []
+        assigned = -1
+        self._enc_split = False
 
-    def _calc_closest_entry(self, node, cf):
-        """Select an entry, using overlap reduction for non-leaf routing."""
+        while True:
+            self._on_descend(node, t)
+
+            if node.is_liar:
+                self._liar_proc(node, x_cf, t)
+                break
+
+            if node.is_leaf:
+                assigned = self._leaf_proc(node, x_cf, h, path, events)
+                break
+
+            ex = self._calc_closest_entry(node, x_cf)
+            if ex is None:
+                break
+
+            if self._last_cf_is_noise:
+                self._noise_proc(
+                    x_cf, node, t, enc_split=self._enc_split, events=events
+                )
+                events.append("noise")
+                break
+
+            if h is not None:
+                eh = self._calc_closest_entry(node, h)
+                if eh is ex:
+                    ex.summary.add(h)
+                else:
+                    self._deposit(eh, h)
+                    h = None
+
+            ex.summary.add(x_cf)
+            path.append(ex)
+
+            if self._time_is_up():
+                ex.buffer.add(x_cf)
+                if h is not None:
+                    ex.buffer.add(h)
+                events.append("buffered")
+                break
+
+            picked = ex.buffer
+            if not picked.is_empty():
+                h = picked.copy() if h is None else (h.add(picked) or h)
+            ex.buffer = MicroCluster.empty(self._dim, t)
+            node = ex.child
+
+        return assigned, -1, ";".join(events)
+
+    # Task 3: liar procedure placeholder.
+    def _liar_proc(self, node: Node, x_cf: MicroCluster, t: int) -> None:
+        """Grow the liar subtree top-down by one level."""
+        pass
+
+    # Task 4: overlap-aware entry selection.
+    def _calc_closest_entry(self, node: Node, cf: MicroCluster):
+        """Select the closest entry, routing non-noise CFs through look-ahead."""
+        self._last_cf_is_noise = False
+        self._last_noise_probability = 0.0
+        ranked = self._rank_entries_by_distance(node, cf)
+        if not ranked:
+            return None
+
+        self._mark_enc_split_from_irrelevant(node)
+        closest = ranked[0][1]
+
+        if self.noise_threshold is not None:
+            self._last_noise_probability = self._noise_probability_from_ranked(ranked)
+            self._last_cf_is_noise = (
+                self._last_noise_probability >= self.noise_threshold
+            )
+            if self._last_cf_is_noise:
+                return closest
+
         if not self.overlap_reduction:
-            return super()._calc_closest_entry(node, cf)
-        return self._select_with_overlap_reduction(node, cf)
+            return closest
+        return self._select_with_overlap_reduction_from_ranked(ranked, cf)
 
-    def _select_with_overlap_reduction(self, node, cf):
+    def _leaf_proc(self, node: Node, x_cf: MicroCluster, h, path, events,
+                   can_split=None):
+        """Leaf insertion with LiarTree's encouraged split flag."""
+        if can_split is None and self._enc_split:
+            can_split = True
+        return super()._leaf_proc(node, x_cf, h, path, events, can_split)
+
+    def _select_with_overlap_reduction_from_ranked(self, ranked, cf):
         """Route to the closest entry, optionally reorganizing overlapping
         sibling subtrees by swapping their closest child entries.
 
@@ -40,10 +137,6 @@ class LiarTree(ClusTree):
         distances go through ``_dist`` so the anytime budget still accounts for
         the extra look-ahead work.
         """
-        ranked = self._rank_entries_by_distance(node, cf)
-        if not ranked:
-            return None
-
         closest = ranked[0][1]
         if len(ranked) < 2 or self._time_is_up():
             return closest
@@ -81,6 +174,27 @@ class LiarTree(ClusTree):
             ranked.append((self._dist(target, entry.summary.mean()), entry))
         ranked.sort(key=lambda item: item[0])
         return ranked
+
+    def _noise_probability_from_ranked(self, ranked):
+        min_ratio = np.inf
+        for dist, entry in ranked:
+            radius = entry.summary.radius()
+            if radius == 0.0:
+                continue
+            min_ratio = min(min_ratio, dist / radius)
+        if not np.isfinite(min_ratio):
+            return 1.0
+        return float(min(1.0, min_ratio))
+
+    def _mark_enc_split_from_irrelevant(self, node):
+        if any(self._is_irrelevant_entry(entry) for entry in node.entries):
+            self._enc_split = True
+
+    def _is_irrelevant_entry(self, entry):
+        if entry.summary.is_empty():
+            return True
+        threshold = 2.0 ** (-self.lam * self.horizon)
+        return entry.summary.n < threshold
 
     def _entries_overlap(self, first, second):
         center_distance = self._dist(first.summary.mean(), second.summary.mean())
@@ -122,7 +236,8 @@ class LiarTree(ClusTree):
                 second_new.radius() < second_parent.summary.radius()):
             return False
 
-        self._swap_child_entries(first_parent, first_child, second_parent, second_child)
+        self._swap_child_entries(first_parent, first_child, second_parent,
+                                 second_child)
         return True
 
     def _simulated_parent_summary(self, parent_entry, replace_entry, replacement):
@@ -232,3 +347,54 @@ class LiarTree(ClusTree):
                                      second_parent, second_child):
         """Test hook for verifying rollback after a mid-swap failure."""
         return None
+
+    # Task 2: noise procedure.
+    def _noise_proc(self, x_cf: MicroCluster, node: Node, t: int,
+                    enc_split: bool = True, events: list | None = None) -> None:
+        """Handle a noise-classified point."""
+        if events is None:
+            events = []
+
+        if node.noise_buffer is None:
+            node.noise_buffer = MicroCluster.empty(self._dim, t)
+        node.noise_buffer.decay(t, self.lam)
+        node.noise_buffer.add(x_cf)
+
+        if not enc_split:
+            return
+
+        valid_entries = [e for e in node.entries if not e.summary.is_empty()]
+        if not valid_entries:
+            return
+
+        n_avg = float(np.mean([e.summary.n for e in valid_entries]))
+        rho_avg = float(np.mean([e.summary.density() for e in valid_entries]))
+        n_nb = node.noise_buffer.n
+        rho_nb = node.noise_buffer.density()
+
+        if noise_to_cluster_test(n_nb, rho_nb, n_avg, rho_avg):
+            self._noise_to_cluster(node, t, events)
+
+    def _noise_to_cluster(self, node: Node, t: int, events: list) -> None:
+        """Graduate the noise buffer into a new cluster entry."""
+        cf = node.noise_buffer.copy()
+
+        liar_child = Node(is_leaf=True, parent=node, timestamp=t)
+        liar_child.is_liar = True
+        liar_child.is_liar_root = True
+
+        new_entry = Entry(
+            summary=cf,
+            buffer=MicroCluster.empty(self._dim, t),
+            child=liar_child,
+            entry_id=self._next_id,
+        )
+        self._next_id += 1
+        liar_child.parent_entry = new_entry
+
+        node.entries.append(new_entry)
+        node.noise_buffer = None
+        events.append("noise_to_cluster")
+
+        if len(node.entries) > self.max_fanout:
+            self._split(node, events)

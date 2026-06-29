@@ -110,7 +110,7 @@ class LiarTreeOverlapTests(unittest.TestCase):
 
     def _tree_with_entries(self, first_values, second_values, first_buffer=None,
                            second_buffer=None, tree_cls=LiarTree):
-        tree = tree_cls(lam=0.0, budget=100)
+        tree = tree_cls(lam=0.0, budget=100, noise_threshold=None)
         tree._dim = 1
         tree._time = 1
         tree._cur_budget = 100

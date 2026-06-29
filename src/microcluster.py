@@ -80,7 +80,18 @@ class MicroCluster:
 
     # LiarTree only (Def. 3): volume V_e = C_d * r^d, density rho_e = n / V_e
     def volume(self):
-        raise NotImplementedError
+        # V_e = C_d * r^d, where C_d = pi^(d/2) / Gamma(d/2 + 1)
+        # r = self.radius(), d = number of dimensions
+        import math
+        d = self.ls.size
+        if d == 0:
+            return 0.0
+        r = self.radius()
+        C_d = (math.pi ** (d / 2)) / math.gamma(d / 2 + 1)
+        return C_d * (r ** d) # TODO be careful for high-dimensional data r^d can overflow or underflip
 
     def density(self):
-        raise NotImplementedError
+        v = self.volume()
+        if v == 0:
+            return 0.0
+        return self.n / v
