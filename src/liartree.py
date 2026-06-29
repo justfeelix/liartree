@@ -1,15 +1,8 @@
-"""LiarTree scaffold.
+"""LiarTree online phase.
 
-Extends ClusTree with per-node noise buffers and Gompertz-based
-noise-to-cluster events (Sec. 2.2–2.3 of the paper).
-
-Tasks
---------------
-Task 1 (Nils)  — ClusTree base:         done, see clustree.py
-Task 2 (Felix) — noise handling:         this file + noise_handler.py
-Task 3 (Anton) — liar node mechanism:    _liar_proc stub below
-Task 4 (Paul)  — overlap look-ahead:     _calc_closest_entry stub below
-                 encouraged leaf splits: _leaf_proc stub below
+Extends ClusTree with per-node noise buffers, Gompertz-based
+noise-to-cluster events, and local overlap-reduction look-ahead during entry
+selection.
 """
 from __future__ import annotations
 
@@ -19,46 +12,50 @@ from .clustree import ClusTree
 from .microcluster import MicroCluster
 from .node import Entry, Node
 from .noise_handler import noise_probability, noise_to_cluster_test
+from .overlap_handler import OverlapHandlerMixin
 
 
-class LiarTree(ClusTree):
+class LiarTree(ClusTree, OverlapHandlerMixin):
     """ClusTree extended with per-node noise buffers and liar-node novelty growth.
 
-    Extra parameter
-    ---------------
+    Parameters
+    ----------
     noise_threshold : float in [0, 1]
         A point is classified as noise when its noise probability (Def. 2)
         is >= noise_threshold.  0 = nothing is noise; 1 = everything outside
         every entry radius is noise.
+    overlap_reduction : bool
+        Enable the local overlap look-ahead and child-entry swap (Sec. 2.2).
+        Set to False to fall back to ClusTree's greedy entry selection.
     """
 
-    def __init__(self, noise_threshold: float = 0.5, **kwargs):
+    def __init__(self, noise_threshold: float = 0.5,
+                 overlap_reduction: bool = True, **kwargs):
         super().__init__(**kwargs)
         self.noise_threshold = noise_threshold
+        self.overlap_reduction = overlap_reduction
+        self._enc_split = False   # accumulates to True when irrelevant entries
+                                  # are found during descent (set by _calc_closest_entry)
 
-
-    # Main LiarTree addition to ClusTree =========================================================================
-    # Descent override — wires in liar check, enc_split, and noise check
+    # =========================================================================
+    # Main descent override — wires in liar check, enc_split, and noise check
     # =========================================================================
 
     def _insert_depth_first(self, x_cf: MicroCluster, t: int):
         """Algorithm 1 depth-first descent with liar and noise handling.
 
         Compared to ClusTree._insert_depth_first, this adds:
-          • liar hook at the top of each iteration
-          • the enc_split flag tracked across levels (wires it in via
-            _calc_closest_entry; defaults to True until then)
-          • noise check after finding the closest entry
+          • liar hook at the top of each iteration (Task 3)
+          • the enc_split flag, set by _calc_closest_entry when an irrelevant
+            entry is found; once True it stays True for the rest of the descent (Task4)
+          • noise check after finding the closest entry (Task 2)
         """
         node = self.root
         h = None        # hitchhiker CF
         path = []       # entries chosen on the way down (for discard rule)
         events = []
         assigned = -1
-        # enc_split accumulates across levels: once True, stays True.
-        # TODO Paul: _calc_closest_entry will set self._enc_split; for now
-        # default to True so the noise-to-cluster test actually fires.
-        self._enc_split = True
+        self._enc_split = False   # reset at the start of each insertion
 
         while True:
             self._on_descend(node, t)
@@ -112,10 +109,9 @@ class LiarTree(ClusTree):
             node = ex.child
 
         return assigned, -1, ";".join(events)
-    
 
     # =========================================================================
-    # Task 3  — Anton 
+    # Task 3 — Anton
     # =========================================================================
 
     def _liar_proc(self, node: Node, x_cf: MicroCluster, t: int) -> None:
@@ -125,28 +121,41 @@ class LiarTree(ClusTree):
         pass
 
     # =========================================================================
-    # Task 4  — Paul
+    # Task 4 — Paul
     # =========================================================================
 
     def _calc_closest_entry(self, node: Node, cf: MicroCluster):
         """Closest entry with local overlap look-ahead (Fig. 1, Sec. 2.2).
+
+        Also sets self._enc_split = True if an irrelevant (empty / too-old)
+        entry is found, signalling that a split is encouraged downstream.
+        Overlap look-ahead is skipped when self.overlap_reduction is False.
         """
-        # TODO Paul: check for irrelevant entries and set self._enc_split = True
-        # TODO Paul: if top-2 entries overlap, peek one level and swap sub-entries
-        # reutrn super
-        pass
+        # Check for irrelevant entries → may set self._enc_split = True
+        self._mark_enc_split_from_irrelevant(node)
+
+        ranked = self._rank_entries_by_distance(node, cf)
+        if not ranked:
+            return None
+
+        if not self.overlap_reduction:
+            return ranked[0][1]
+
+        return self._select_with_overlap_reduction(ranked, cf)
 
     def _leaf_proc(self, node: Node, x_cf: MicroCluster, h, path, events,
                    can_split=None):
         """Leaf insertion with encouraged splits (Sec. 2.5).
-        """
-        # TODO Paul: when self._enc_split is True, allow hitchhiker to overflow
-        # reutrn super
-        pass
 
+        When enc_split is True, the hitchhiker insertion can also trigger an
+        overflow and split — unlike ClusTree, which merges to delay splits.
+        """
+        if can_split is None and self._enc_split:
+            can_split = True
+        return super()._leaf_proc(node, x_cf, h, path, events, can_split)
 
     # =========================================================================
-    # Task 2: noise procedure (Sec. 2.3)
+    # Task2: Noise procedure (Sec. 2.3)
     # =========================================================================
 
     def _noise_proc(self, x_cf: MicroCluster, node: Node, t: int,
@@ -162,8 +171,8 @@ class LiarTree(ClusTree):
         Parameters
         ----------
         enc_split : True when an irrelevant entry was found on the path down
-            (set by _calc_closest_entry, Paul's task). The paper only checks
-            the Gompertz test when this flag is True.
+            (set by _calc_closest_entry). The paper only checks the Gompertz
+            test when this flag is True (Def. 4, Sec. 2.3).
         events : running event log from the descent loop.
         """
         if events is None:
@@ -183,10 +192,10 @@ class LiarTree(ClusTree):
         if not valid_entries:
             return   # nothing to compare against yet
 
-        n_avg  = float(np.mean([e.summary.n       for e in valid_entries]))
+        n_avg   = float(np.mean([e.summary.n         for e in valid_entries]))
         rho_avg = float(np.mean([e.summary.density() for e in valid_entries]))
-        n_nb   = node.noise_buffer.n
-        rho_nb = node.noise_buffer.density()
+        n_nb    = node.noise_buffer.n
+        rho_nb  = node.noise_buffer.density()
 
         # Step 3: graduate if test passes
         if noise_to_cluster_test(n_nb, rho_nb, n_avg, rho_avg):
