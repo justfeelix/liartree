@@ -10,7 +10,7 @@ import argparse
 
 from src.clustree import ClusTree
 from src.offline import OfflineClusterer
-from src.stream_runner import StreamSimulator, load_dataset
+from src.stream_runner import StreamRunner, load_dataset
 
 
 def build_arg_parser():
@@ -72,14 +72,14 @@ def main():
     X, y = load_dataset(args.dataset, scale=not args.no_scale)
     tree = ClusTree(max_fanout=args.max_fanout, leaf_capacity_max=args.leaf_max,
                     lam=args.lam, horizon=args.horizon, descent=args.descent,
-                    budget=args.budget, max_height=args.max_height,
-                    aggregate=args.aggregate, max_aggregates=args.max_aggregates)
+                    budget=args.budget, max_height=args.max_height)
     offline = OfflineClusterer(method=args.offline, n_clusters=args.n_clusters,
                                eps=args.eps, min_samples=args.min_samples,
                                weighted=not args.unweighted, random_state=args.seed)
-    sim = StreamSimulator(tree, offline, stop_after=args.stop_after, pps=args.pps,
+    sim = StreamRunner(tree, offline, stop_after=args.stop_after, pps=args.pps,
                           compute_cmm=not args.no_cmm, compute_ts=not args.no_ts,
-                          progress=not args.quiet)
+                          progress=not args.quiet,
+                          aggregate=args.aggregate, max_aggregates=args.max_aggregates)
 
     print("dataset=%s points=%d dim=%d budget=%d offline=%s"
           % (args.dataset, len(X), X.shape[1], args.budget, args.offline))
