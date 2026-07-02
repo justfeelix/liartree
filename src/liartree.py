@@ -363,6 +363,14 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
             cur = cur.parent
         liar_root = cur   # may be liar_node itself when is_liar_root
 
+        if liar_root is None:
+            # Stale liar flag: the liar_root was cleared (e.g. by a previous
+            # _clear_liar_flags call that used a stale reference). Clear the
+            # flag on this node and skip — the point is safely discarded.
+            liar_node.is_liar = False
+            events.append("liar_skip")
+            return -1
+
         # ------------------------------------------------------------------
         # Step 3: build Entry objects
         # 
@@ -405,6 +413,11 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
                 liar_node.entries.append(e)
             host_node = liar_node
 
+            # Set is_leaf BEFORE _split_liar so the sibling (created with
+            # Node(is_leaf=node.is_leaf)) inherits the correct flag.
+            if at_leaf_level:
+                liar_node.is_leaf = True
+
             if len(liar_node.entries) > self.max_fanout:
                 self._split_liar(liar_node, events, liar_root)
         else:
@@ -416,6 +429,10 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
             host_node = parent
             liar_node.is_liar = False
 
+            # Same: set is_leaf before _split_liar.
+            if at_leaf_level:
+                parent.is_leaf = True
+
             if len(parent.entries) > self.max_fanout:
                 self._split_liar(parent, events, liar_root)
 
@@ -423,8 +440,15 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
         # Step 6 (flag block, part 2): leaf-level promotion
         # ------------------------------------------------------------------
         if at_leaf_level:
-            host_node.is_leaf = True
-            self._clear_liar_flags(liar_root)
+            # host_node.is_leaf was already set above (before the split so
+            # any sibling inherits the correct flag).
+            # Re-find the actual liar_root: _split_liar may have promoted a
+            # new_root above the one we found at the top of this call.
+            cur = host_node
+            while cur is not None and not cur.is_liar_root:
+                cur = cur.parent
+            if cur is not None:
+                self._clear_liar_flags(cur)
             events.append("liar_promote")
         else:
             events.append("liar_grow")
@@ -481,6 +505,11 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
             return
 
         # Regular liar-subtree split: propagate up to (but not past) liar_root
+        if node.parent is None:
+            # node has no parent — it escaped the liar subtree boundary (should
+            # not happen with correct liar_root tracking, but guard defensively).
+            events.append("liar_split_escaped")
+            return
         if pe is not None:
             sumA.add(pe.buffer)
             pe.summary = sumA
