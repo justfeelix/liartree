@@ -60,7 +60,7 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
         self.budget = budget
         self.max_height = max_height
 
-        self.root = Node(is_leaf=True, timestamp=0)
+        self.root = Node(is_leaf=True, timestamp=0, created_by="root")
         self.merge_list = []
         self._time = 0
         self._next_id = 0
@@ -379,7 +379,8 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
         up; a new root is grown when the root itself splits."""
         groupA, groupB = self._best_split(node.entries)
         t = node.timestamp
-        sibling = Node(is_leaf=node.is_leaf, parent=node.parent, timestamp=t)
+        sibling = Node(is_leaf=node.is_leaf, parent=node.parent, timestamp=t,
+                       created_by="split")
         node.entries = groupA
         sibling.entries = groupB
         for e in groupB:
@@ -391,7 +392,7 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
         pe = node.parent_entry
 
         if pe is None:
-            new_root = Node(is_leaf=False, timestamp=t)
+            new_root = Node(is_leaf=False, timestamp=t, created_by="split")
             eA = Entry(sumA, MicroCluster.empty(self._dim, t), node, None)
             eB = Entry(sumB, MicroCluster.empty(self._dim, t), sibling, None)
             node.parent, node.parent_entry = new_root, eA

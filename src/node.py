@@ -32,12 +32,21 @@ class Node:
     node at once when it is descended into (Sec. 3.2).
     """
 
-    def __init__(self, is_leaf=False, parent=None, parent_entry=None, timestamp=0):
+    def __init__(self, is_leaf=False, parent=None, parent_entry=None, timestamp=0,
+                 created_by=None):
         self.entries = []                 # list[Entry]
         self.is_leaf = is_leaf
         self.parent = parent              # parent Node (None at the root)
         self.parent_entry = parent_entry  # entry in the parent node pointing here
         self.timestamp = timestamp
+
+        # Provenance tag for inspection/visualization only -- purely
+        # descriptive metadata, never read by the algorithm itself:
+        # "root" (the tree's initial node), "split" (born from
+        # ClusTree._split / LiarTree._split_liar overflow handling), or
+        # "noise_to_cluster" (born from the LiarTree top-down liar-subtree
+        # growth in _spawn_liar_root / _liar_proc, Sec. 2.3-2.4).
+        self.created_by = created_by
 
         # Unused by plain ClusTree, here for the LiarTree subclass:
         self.noise_buffer = None          # CF_nb per-node noise buffer (Def. 1)
