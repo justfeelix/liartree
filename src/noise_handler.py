@@ -77,7 +77,11 @@ def gompertz_params(n_avg: float,
     if n_avg <= 2.0:
         return None, None
     c = float(np.log(np.log(t0) / np.log(t1)) / (n_avg - 2.0))
-    b = float(-np.log(t0) * np.exp(2.0 * c))
+    # b can legitimately be astronomical when n_avg is barely above 2 (c is
+    # then huge); that's an extreme-but-valid shape parameter, not an error,
+    # so silence the resulting overflow-to-inf warning here.
+    with np.errstate(over="ignore"):
+        b = float(-np.log(t0) * np.exp(2.0 * c))
     return b, c
 
 
@@ -98,7 +102,14 @@ def gompertz(n_nb: float,
     b, c = gompertz_params(n_avg, t0, t1)
     if b is None:
         return 0.0
-    return float(np.exp(-b * np.exp(-c * n_nb)))
+    # exp(-b * exp(-c*n_nb)) is mathematically equal to
+    # exp(ln(t0) * exp(c*(2-n_nb))) (substituting b = -ln(t0)*exp(2c)), but
+    # the direct formula multiplies an overflowing exp(2c) by an underflowing
+    # exp(-c*n_nb) when n_avg is close to 2, producing inf*0 = nan. The
+    # combined-exponent form below only ever takes exp() of one bounded
+    # value, so it stays well-defined (and still hits the exact t0/t1
+    # anchors at n_nb=2 / n_nb=n_avg) across the whole domain.
+    return float(np.exp(np.log(t0) * np.exp(c * (2.0 - n_nb))))
 
 
 # ---------------------------------------------------------------------------

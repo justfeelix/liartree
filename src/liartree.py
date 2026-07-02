@@ -504,22 +504,35 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
             events.append("liar_root_split")
             return
 
-        # Regular liar-subtree split: propagate up to (but not past) liar_root
-        if node.parent is None:
-            # node has no parent — it escaped the liar subtree boundary (should
-            # not happen with correct liar_root tracking, but guard defensively).
-            events.append("liar_split_escaped")
+        # Regular liar-subtree split: propagate up to (but not past) liar_root.
+        # pe is None here only if this split reached the true tree root
+        # without ever hitting liar_root by identity - e.g. a sibling liar
+        # branch already promoted/cleared the flags via _clear_liar_flags
+        # while this branch was still growing (Sec. 2.4). Mirror
+        # ClusTree._split's own root-growth handling instead of assuming a
+        # parent always exists.
+        if pe is None:
+            new_root = Node(is_leaf=False, timestamp=t)
+            eA = Entry(sumA, MicroCluster.empty(self._dim, t), node,    None)
+            eB = Entry(sumB, MicroCluster.empty(self._dim, t), sibling, None)
+            node.parent,    node.parent_entry    = new_root, eA
+            sibling.parent, sibling.parent_entry = new_root, eB
+            new_root.entries = [eA, eB]
+            self.root     = new_root
+            self._height += 1
+            events.append("split_root")
             return
-        if pe is not None:
-            sumA.add(pe.buffer)
-            pe.summary = sumA
+
+        sumA.add(pe.buffer)
+        pe.summary = sumA
         eB = Entry(sumB, MicroCluster.empty(self._dim, t), sibling, None)
         sibling.parent_entry = eB
-        node.parent.entries.append(eB)
+        parent = node.parent
+        parent.entries.append(eB)
         events.append("split")
 
-        if len(node.parent.entries) > self.max_fanout:
-            self._split_liar(node.parent, events, liar_root)
+        if len(parent.entries) > self.max_fanout:
+            self._split_liar(parent, events, liar_root)
 
     def _clear_liar_flags(self, node):
         """Recursively clear is_liar / is_liar_root from an entire liar subtree."""
