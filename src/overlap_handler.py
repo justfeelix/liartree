@@ -46,7 +46,11 @@ class OverlapHandlerMixin:
     # -------------------------------------------------------------------------
 
     def _rank_entries_by_distance(self, node, cf) -> list:
-        """Return [(distance, entry), ...] sorted closest-first, skipping empty."""
+        """Return [(distance, entry), ...] sorted closest-first, skipping empty.
+
+        Stores the result in self._last_ranked so that callers can reuse the
+        computed distances (e.g. for noise probability) without extra _dist calls.
+        """
         target = cf.mean()
         ranked = []
         for entry in node.entries:
@@ -54,6 +58,7 @@ class OverlapHandlerMixin:
                 continue
             ranked.append((self._dist(target, entry.summary.mean()), entry))
         ranked.sort(key=lambda item: item[0])
+        self._last_ranked = ranked
         return ranked
 
     # -------------------------------------------------------------------------

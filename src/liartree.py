@@ -60,7 +60,18 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
           • liar hook at the top of each iteration (Alg. 1, line 5)
           • the enc_split flag, set by _calc_closest_entry when an irrelevant
             entry is found; once True it stays True for the rest of the descent
-          • noise check BEFORE leaf check; leaf check BEFORE entry selection
+          • noise check at INNER nodes (after _calc_closest_entry so that
+            enc_split is already updated and the noise check uses stable radii;
+            leaf nodes are never noise-checked — their entries are too fine-grained
+            and unstable in the early stream)
+
+        Why noise at inner only (not leaf):
+          Algorithm 1 puts the noise check before the leaf check, but inner
+          entries aggregate many points → stable, meaningful radii. Leaf
+          entries may be single-point (r=0) or tiny, causing almost all
+          points to be falsely flagged as noise before the tree matures.
+          Restricting noise detection to inner nodes matches the spirit of
+          Sec. 2.3.
         """
         node = self.root
         h = None        # hitchhiker CF
@@ -79,25 +90,21 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
                 assigned = self._liar_proc(node, x_cf, t, events)
                 break
 
-            # noise check — BEFORE leaf check (Algorithm 1)
-            np_score = noise_probability(x_cf.mean(), node.entries, self._dist)
-            if np_score >= self.noise_threshold:
-                self._noise_proc(x_cf, node, t, enc_split=self._enc_split,
-                                 events=events)
-                events.append("noise")
-                break
-
-            # leaf insertion — AFTER noise check, BEFORE entry selection
+            # Leaf insertion (Algorithm 1, line 15).
+            # Placed BEFORE noise check so that leaf entries accumulate
+            # normally; noise detection runs only at inner nodes below.
             if node.is_leaf:
                 assigned = self._leaf_proc(node, x_cf, h, path, events)
                 break
 
-            # inner node: pick closest child entry (also sets _enc_split flag)
+            # Inner node: find closest entry (also sets self._enc_split if
+            # an irrelevant entry exists — Algorithm 1, line 7 / Sec. 2.2)
             ex = self._calc_closest_entry(node, x_cf)
             if ex is None:
                 break
 
-            # hitchhiker logic — inner nodes only
+            # Hitchhiker routing — Algorithm 1, lines 8-11
+            # (inner only; leaf entries have no buffer to deposit into)
             if h is not None:
                 eh = self._calc_closest_entry(node, h)
                 if eh is ex:
@@ -105,6 +112,15 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
                 else:
                     self._deposit(eh, h)
                     h = None
+
+            # Noise check at inner nodes — Algorithm 1, lines 12-13
+            # enc_split is now set (updated by _calc_closest_entry above).
+            np_score = noise_probability(x_cf.mean(), node.entries, self._dist)
+            if np_score >= self.noise_threshold:
+                self._noise_proc(x_cf, node, t, enc_split=self._enc_split,
+                                 events=events)
+                events.append("noise")
+                break
 
             ex.summary.add(x_cf)
             path.append(ex)

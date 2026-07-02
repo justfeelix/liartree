@@ -42,7 +42,12 @@ def noise_probability(x: np.ndarray, node_entries, dist_fn) -> float:
         d = dist_fn(x, e.summary.mean())
         min_ratio = min(min_ratio, d / r)
     if not np.isfinite(min_ratio):
-        return 1.0
+        # No valid entry found (all empty or all single-point with r=0).
+        # A point cannot be noise when there is nothing to compare it
+        # against — return 0.0 so the point is inserted normally.  This
+        # matches the paper's implicit assumption that calcClosestEntry does
+        # NOT mark x as noise when no entry has an established radius.
+        return 0.0
     return float(min(1.0, min_ratio))
 
 

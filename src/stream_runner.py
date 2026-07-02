@@ -42,18 +42,18 @@ def load_dataset(name, batch=None, batch_max=None, scale=True):
 
 def compute_cmm(X, gt, clu, weights=None, k=10):
     setup_baseframework_path()
-    import cmm
+    from baseframework.metrics.cmm import get_cmm
     if weights is None:
         weights = np.ones(len(X))
-    return cmm.get_cmm(np.asarray(X), np.asarray(gt), np.asarray(clu),
-                       np.asarray(weights), k)
+    return get_cmm(np.asarray(X), np.asarray(gt), np.asarray(clu),
+                   np.asarray(weights), k)
 
 
 def compute_temporal_silhouette(t, X, labels, s=200, kn=200, c=1):
     setup_baseframework_path()
-    import TSindex
-    _, _, ts = TSindex.tempsil(np.asarray(t), np.asarray(X), np.asarray(labels),
-                               s=s, kn=kn, c=c)
+    from baseframework.metrics.TSindex import tempsil
+    _, _, ts = tempsil(np.asarray(t), np.asarray(X), np.asarray(labels),
+                       s=s, kn=kn, c=c)
     return ts
 
 
