@@ -489,6 +489,13 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
         # parent always exists.
         if pe is None:
             new_root = Node(is_leaf=False, timestamp=t)
+            # This new root replaces the true tree root, but node/sibling may
+            # still hold orphaned is_liar descendants whose real liar_root was
+            # already lost (see comment above). Mark it is_liar_root so those
+            # descendants can still resolve a valid ancestor when climbing
+            # (_liar_proc) or get swept by _clear_liar_flags later, instead of
+            # resolving to None.
+            new_root.is_liar_root = True
             eA = Entry(sumA, MicroCluster.empty(self._dim, t), node,    None)
             eB = Entry(sumB, MicroCluster.empty(self._dim, t), sibling, None)
             node.parent,    node.parent_entry    = new_root, eA
