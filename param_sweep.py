@@ -55,13 +55,13 @@ if PROJECT_ROOT not in sys.path:
 # TREE_PARAM_NAMES below for the split).
 SEARCH_SPACES = {
     "liartree": {
-        "lam": ("float", 1e-5, 1.0, True),          # ClusTree Sec. 3.2 decay rate
-        "noise_threshold": ("float", 0.0, 1.0, False),  # LiarTree Def. 2
+        "lam": ("float", 1e-5, 3.0, True),          # ClusTree Sec. 3.2 decay rate
+        "noise_threshold": ("float", 0.0, 1.5, False),  # LiarTree Def. 2
         "eps": ("float", 0.005, 0.5, False),
         "min_samples": ("int", 1, 15, False),
     },
     "clustree": {
-        "lam": ("float", 1e-5, 1.0, True),
+        "lam": ("float", 1e-5, 3.0, True),
         "eps": ("float", 0.005, 0.5, False),
         "min_samples": ("int", 1, 15, False),
     },
