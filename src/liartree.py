@@ -264,7 +264,8 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
 
         Returns the new Node so the caller can set .parent on it.
         """
-        node = Node(is_leaf=False, parent_entry=entry, timestamp=t)
+        node = Node(is_leaf=False, parent_entry=entry, timestamp=t,
+                   created_by="noise_to_cluster")
         node.is_liar = True
         node.is_liar_root = True
         entry.child = node
@@ -390,7 +391,8 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
             host_node_pre = liar_node if is_liar_root else liar_node.parent
             for e in new_entries:
                 liar_child = Node(is_leaf=False, parent=host_node_pre,
-                                  parent_entry=e, timestamp=t)
+                                  parent_entry=e, timestamp=t,
+                                  created_by="noise_to_cluster")
                 liar_child.is_liar = True
                 e.child = liar_child
 
@@ -440,7 +442,8 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
         """
         groupA, groupB = self._best_split(node.entries)
         t       = node.timestamp
-        sibling = Node(is_leaf=node.is_leaf, parent=node.parent, timestamp=t)
+        sibling = Node(is_leaf=node.is_leaf, parent=node.parent, timestamp=t,
+                       created_by="split")
         node.entries    = groupA
         sibling.entries = groupB
         for e in groupB:
@@ -454,7 +457,8 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
 
         if node is liar_root:
             # Liar-root overflow: grow the liar subtree upward by one level
-            new_root = Node(is_leaf=False, parent=node.parent, timestamp=t)
+            new_root = Node(is_leaf=False, parent=node.parent, timestamp=t,
+                            created_by="split")
             new_root.is_liar_root = True
             node.is_liar_root     = False
 
@@ -488,7 +492,7 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
         # ClusTree._split's own root-growth handling instead of assuming a
         # parent always exists.
         if pe is None:
-            new_root = Node(is_leaf=False, timestamp=t)
+            new_root = Node(is_leaf=False, timestamp=t, created_by="split")
             # This new root replaces the true tree root, but node/sibling may
             # still hold orphaned is_liar descendants whose real liar_root was
             # already lost (see comment above). Mark it is_liar_root so those
