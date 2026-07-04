@@ -55,15 +55,15 @@ if PROJECT_ROOT not in sys.path:
 # TREE_PARAM_NAMES below for the split).
 SEARCH_SPACES = {
     "liartree": {
-        "lam": ("float", 1e-5, 3.0, True),          # ClusTree Sec. 3.2 decay rate
+        "lam": ("float", 1e-5, 4.0, True),          # ClusTree Sec. 3.2 decay rate
         "noise_threshold": ("float", 0.0, 1.5, False),  # LiarTree Def. 2
         "eps": ("float", 0.005, 0.5, False),
-        "min_samples": ("int", 1, 15, False),
+        "min_samples": ("int", 1, 20, False),
     },
     "clustree": {
-        "lam": ("float", 1e-5, 3.0, True),
+        "lam": ("float", 1e-5, 4.0, True),
         "eps": ("float", 0.005, 0.5, False),
-        "min_samples": ("int", 1, 15, False),
+        "min_samples": ("int", 1, 20, False),
     },
 }
 TREE_PARAM_NAMES = {"lam", "noise_threshold"}
@@ -204,7 +204,7 @@ def _make_objective(algorithm, X_full, X_cmm, y_cmm, w_cmm, true_k, seed):
         f1 = float(_compute_f1(y_cmm, pred, X_cmm))
         purity = _compute_purity(y_cmm, pred)
 
-        quality = (cmm + f1) / 2
+        quality = f1
         size_penalty = abs(n_clusters - true_k) / true_k
 
         trial.set_user_attr("cmm", cmm)
