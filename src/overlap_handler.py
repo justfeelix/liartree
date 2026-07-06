@@ -114,6 +114,31 @@ class OverlapHandlerMixin:
             return False
         return any(not e.summary.is_empty() for e in child.entries)
 
+    @staticmethod
+    def _subtree_has_orphan_risk(node, has_root_ancestor=False) -> bool:
+        """True if relocating *node* as a standalone subtree would sever some
+        still-growing liar node from its is_liar_root ancestor.
+
+        A liar subtree is self-contained (safe to move as a unit) only if
+        its is_liar_root node is at or above every is_liar node within it.
+        Checks the whole subtree, not just node itself, because a node one
+        level into an active liar lineage is often already demoted back to
+        is_liar=False (Sec. 2.4) while its own descendants -- and the real
+        is_liar_root -- sit further up, outside the boundary being moved.
+        """
+        cur_has_root = has_root_ancestor or node.is_liar_root
+        if node.is_liar and not cur_has_root:
+            return True
+        return any(
+            e.child is not None
+            and OverlapHandlerMixin._subtree_has_orphan_risk(e.child, cur_has_root)
+            for e in node.entries
+        )
+
+    @classmethod
+    def _is_liar_node(cls, node) -> bool:
+        return node is not None and cls._subtree_has_orphan_risk(node)
+
     def _closest_child_entry(self, parent_entry, cf):
         target = cf.mean()
         best, best_dist = None, np.inf
@@ -134,6 +159,16 @@ class OverlapHandlerMixin:
         Returns True if the swap was performed.
         """
         if first_parent.child is second_parent.child:
+            return False
+
+        # Never relocate a still-growing liar-subtree node (Sec. 2.4) into an
+        # unrelated part of the tree. _retarget_moved_child only patches the
+        # moved entry's own parent/parent_entry -- it cannot reattach it to
+        # its is_liar_root ancestor, so a swapped-out non-root liar node would
+        # be silently severed from the liar_root that _liar_proc later climbs
+        # to find, crashing with liar_root=None once that orphaned branch is
+        # eventually grown to leaf level.
+        if self._is_liar_node(first_child.child) or self._is_liar_node(second_child.child):
             return False
 
         first_new = self._simulated_parent_summary(

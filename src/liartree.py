@@ -264,7 +264,8 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
 
         Returns the new Node so the caller can set .parent on it.
         """
-        node = Node(is_leaf=False, parent_entry=entry, timestamp=t)
+        node = Node(is_leaf=False, parent_entry=entry, timestamp=t,
+                   created_by="noise_to_cluster")
         node.is_liar = True
         node.is_liar_root = True
         entry.child = node
@@ -398,7 +399,8 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
             host_node_pre = liar_node if is_liar_root else liar_node.parent
             for e in new_entries:
                 liar_child = Node(is_leaf=False, parent=host_node_pre,
-                                  parent_entry=e, timestamp=t)
+                                  parent_entry=e, timestamp=t,
+                                  created_by="noise_to_cluster")
                 liar_child.is_liar = True
                 e.child = liar_child
 
@@ -464,7 +466,8 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
         """
         groupA, groupB = self._best_split(node.entries)
         t       = node.timestamp
-        sibling = Node(is_leaf=node.is_leaf, parent=node.parent, timestamp=t)
+        sibling = Node(is_leaf=node.is_leaf, parent=node.parent, timestamp=t,
+                       created_by="split")
         node.entries    = groupA
         sibling.entries = groupB
         for e in groupB:
@@ -478,7 +481,8 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
 
         if node is liar_root:
             # Liar-root overflow: grow the liar subtree upward by one level
-            new_root = Node(is_leaf=False, parent=node.parent, timestamp=t)
+            new_root = Node(is_leaf=False, parent=node.parent, timestamp=t,
+                            created_by="split")
             new_root.is_liar_root = True
             node.is_liar_root     = False
 
@@ -504,22 +508,42 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
             events.append("liar_root_split")
             return
 
-        # Regular liar-subtree split: propagate up to (but not past) liar_root
-        if node.parent is None:
-            # node has no parent — it escaped the liar subtree boundary (should
-            # not happen with correct liar_root tracking, but guard defensively).
-            events.append("liar_split_escaped")
+        # Regular liar-subtree split: propagate up to (but not past) liar_root.
+        # pe is None here only if this split reached the true tree root
+        # without ever hitting liar_root by identity - e.g. a sibling liar
+        # branch already promoted/cleared the flags via _clear_liar_flags
+        # while this branch was still growing (Sec. 2.4). Mirror
+        # ClusTree._split's own root-growth handling instead of assuming a
+        # parent always exists.
+        if pe is None:
+            new_root = Node(is_leaf=False, timestamp=t, created_by="split")
+            # This new root replaces the true tree root, but node/sibling may
+            # still hold orphaned is_liar descendants whose real liar_root was
+            # already lost (see comment above). Mark it is_liar_root so those
+            # descendants can still resolve a valid ancestor when climbing
+            # (_liar_proc) or get swept by _clear_liar_flags later, instead of
+            # resolving to None.
+            new_root.is_liar_root = True
+            eA = Entry(sumA, MicroCluster.empty(self._dim, t), node,    None)
+            eB = Entry(sumB, MicroCluster.empty(self._dim, t), sibling, None)
+            node.parent,    node.parent_entry    = new_root, eA
+            sibling.parent, sibling.parent_entry = new_root, eB
+            new_root.entries = [eA, eB]
+            self.root     = new_root
+            self._height += 1
+            events.append("split_root")
             return
-        if pe is not None:
-            sumA.add(pe.buffer)
-            pe.summary = sumA
+
+        sumA.add(pe.buffer)
+        pe.summary = sumA
         eB = Entry(sumB, MicroCluster.empty(self._dim, t), sibling, None)
         sibling.parent_entry = eB
-        node.parent.entries.append(eB)
+        parent = node.parent
+        parent.entries.append(eB)
         events.append("split")
 
-        if len(node.parent.entries) > self.max_fanout:
-            self._split_liar(node.parent, events, liar_root)
+        if len(parent.entries) > self.max_fanout:
+            self._split_liar(parent, events, liar_root)
 
     def _clear_liar_flags(self, node):
         """Recursively clear is_liar / is_liar_root from an entire liar subtree."""
