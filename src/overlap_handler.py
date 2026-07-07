@@ -84,11 +84,13 @@ class OverlapHandlerMixin:
         if not (self._can_look_ahead(closest) and self._can_look_ahead(second)):
             return closest
 
-        self._on_descend(closest.child, self._time)
-        self._on_descend(second.child, self._time)
-        if self._time_is_up():
-            return closest
-
+        # Fix of Bug D: _on_descend calls removed. Mean and radius are
+        # decay-invariant (n, LS, SS all scale by the same omega, which
+        # cancels in mean=LS/n and variance=SS/n-(LS/n)^2), so decay has
+        # zero effect on routing decisions. Calling _on_descend here
+        # permanently lowered the weight n of subtrees we only peeked at
+        # and never descended into, causing spurious enc_split triggers
+        # and distorting the density-based graduation test.
         first_child, first_child_dist = self._closest_child_entry(closest, cf)
         second_child, second_child_dist = self._closest_child_entry(second, cf)
         if first_child is None or second_child is None:

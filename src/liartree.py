@@ -23,7 +23,9 @@ import numpy as np
 from .clustree import ClusTree
 from .microcluster import MicroCluster
 from .node import Entry, Node
-from .noise_handler import noise_probability, noise_to_cluster_test
+from .noise_handler import noise_to_cluster_test
+# noise_probability no longer called in descent loop (Fix of Bug B/C);
+# _noise_prob_from_ranked below reuses cached distances instead.
 from .overlap_handler import OverlapHandlerMixin
 
 
@@ -103,25 +105,43 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
             if ex is None:
                 break
 
-            # Hitchhiker routing — Algorithm 1, lines 8-11
+            # Fix of Bug C: save x distances BEFORE hitchhiker routing
+            # overwrites self._last_ranked with h's distances.
+            x_ranked = self._last_ranked
+
+            # Hitchhiker routing — Algorithm 1, lines 8-11.
+            # Fix of Bug A: save eh, do NOT add h to ex.summary yet — that
+            # is deferred until after the noise check so that h is not added
+            # when x is classified as noise. (Paper Algorithm 1 line 19 adds
+            # both x and h to ex only after the noise check passes.)
             # (inner only; leaf entries have no buffer to deposit into)
+            eh = None
             if h is not None:
                 eh = self._calc_closest_entry(node, h)
-                if eh is ex:
-                    ex.summary.add(h)
-                else:
+                if eh is not ex:
                     self._deposit(eh, h)
                     h = None
 
-            # Noise check at inner nodes — Algorithm 1, lines 12-13
-            # enc_split is now set (updated by _calc_closest_entry above).
-            np_score = noise_probability(x_cf.mean(), node.entries, self._dist)
-            if np_score >= self.noise_threshold:
-                self._noise_proc(x_cf, node, t, enc_split=self._enc_split,
-                                 events=events)
-                events.append("noise")
-                break
+            # Noise check at inner nodes — Algorithm 1, lines 12-13.
+            # Fix of Bug B: skip entirely when threshold > 1.0 — np(o) is
+            # capped at 1.0, so it can never reach a threshold above 1;
+            # calling noise_probability() there only burned budget for nothing.
+            # Fix of Bug C: _noise_prob_from_ranked reuses the (dist, entry)
+            # pairs from x_ranked instead of calling self._dist again for
+            # every entry.
+            if self.noise_threshold <= 1.0:  # Fix of Bug B
+                np_score = self._noise_prob_from_ranked(x_ranked)  # Fix of Bug C
+                if np_score >= self.noise_threshold:
+                    self._noise_proc(x_cf, node, t, enc_split=self._enc_split,
+                                     events=events)
+                    events.append("noise")
+                    break
 
+            # Fix of Bug A: add hitchhiker to ex.summary here, after noise
+            # check passes — mirrors paper Algorithm 1 line 19 which adds
+            # both x and h to ex only once noise is ruled out.
+            if h is not None and eh is ex:
+                ex.summary.add(h)
             ex.summary.add(x_cf)
             path.append(ex)
 
@@ -161,6 +181,32 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
             return ranked[0][1]
 
         return self._select_with_overlap_reduction(ranked, cf)
+
+    # =========================================================================
+    # Noise probability from pre-ranked distances (Fix of Bug C)
+    # =========================================================================
+
+    def _noise_prob_from_ranked(self, ranked: list) -> float:
+        """Compute noise probability reusing distances from _rank_entries_by_distance.
+
+        Fix of Bug C: avoids redundant self._dist calls by using the
+        (distance, entry) pairs already computed during entry selection
+        instead of recomputing dist(x, mu_e) for every entry again.
+
+        Mirrors noise_probability() from noise_handler.py but takes the
+        pre-ranked list instead of a dist_fn.
+        """
+        min_ratio = float("inf")
+        for d, e in ranked:
+            if e.summary.is_empty():
+                continue
+            r = e.summary.radius()
+            if r == 0.0:
+                continue
+            min_ratio = min(min_ratio, d / r)
+        if not np.isfinite(min_ratio):
+            return 0.0
+        return float(min(1.0, min_ratio))
 
     # =========================================================================
     # Encouraged-split leaf proc (Sec. 2.5 — Felix)
