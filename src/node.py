@@ -20,6 +20,12 @@ class Entry:
         self.child = child        # child Node (inner only)
         self.id = entry_id        # unique id for tracking (leaf entries, Sec. 3.1)
 
+        # Set to True by LiarTree._noise_to_cluster when this entry is born
+        # from a noise-buffer graduation.  Persists after liar-flag clearing so
+        # that _noise_prob_from_ranked can still identify these entries and skip
+        # their artificially-tight radius (noise-buffer CF ≪ mature cluster).
+        self.is_noise_promoted = False
+
     def is_inner(self):
         return self.child is not None
 

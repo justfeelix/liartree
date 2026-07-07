@@ -24,8 +24,6 @@ from .clustree import ClusTree
 from .microcluster import MicroCluster
 from .node import Entry, Node
 from .noise_handler import noise_to_cluster_test
-# noise_probability no longer called in descent loop (Fix of Bug B/C);
-# _noise_prob_from_ranked below reuses cached distances instead.
 from .overlap_handler import OverlapHandlerMixin
 
 
@@ -44,10 +42,18 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
     """
 
     def __init__(self, noise_threshold: float = 0.5,
-                 overlap_reduction: bool = True, **kwargs):
+                 overlap_reduction: bool = True,
+                 noise_min_weight: float = 5.0,
+                 **kwargs):
         super().__init__(**kwargs)
         self.noise_threshold = noise_threshold
         self.overlap_reduction = overlap_reduction
+        self.noise_min_weight = noise_min_weight
+        # Fix of Bug: noise_min_weight gates the noise probability computation.
+        # An inner entry is only considered in np(o) when its decayed weight
+        # exceeds this value, ensuring the radius is from a mature (single-cluster)
+        # aggregate rather than an early multi-cluster mixture.  With noise_min_weight=0
+        # the behaviour reverts to the original (all valid entries participate).
         self._enc_split = False   # accumulates to True when irrelevant entries
                                   # are found during descent (set by _calc_closest_entry)
 
@@ -105,12 +111,12 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
             if ex is None:
                 break
 
-            # Fix of Bug C: save x distances BEFORE hitchhiker routing
+            # save x distances BEFORE hitchhiker routing
             # overwrites self._last_ranked with h's distances.
             x_ranked = self._last_ranked
 
             # Hitchhiker routing — Algorithm 1, lines 8-11.
-            # Fix of Bug A: save eh, do NOT add h to ex.summary yet — that
+            # save eh, do NOT add h to ex.summary yet — that
             # is deferred until after the noise check so that h is not added
             # when x is classified as noise. (Paper Algorithm 1 line 19 adds
             # both x and h to ex only after the noise check passes.)
@@ -123,21 +129,29 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
                     h = None
 
             # Noise check at inner nodes — Algorithm 1, lines 12-13.
-            # Fix of Bug B: skip entirely when threshold > 1.0 — np(o) is
+            # skip entirely when threshold > 1.0 — np(o) is
             # capped at 1.0, so it can never reach a threshold above 1;
             # calling noise_probability() there only burned budget for nothing.
-            # Fix of Bug C: _noise_prob_from_ranked reuses the (dist, entry)
+            #  _noise_prob_from_ranked reuses the (dist, entry)
             # pairs from x_ranked instead of calling self._dist again for
             # every entry.
-            if self.noise_threshold <= 1.0:  # Fix of Bug B
-                np_score = self._noise_prob_from_ranked(x_ranked)  # Fix of Bug C
-                if np_score >= self.noise_threshold:
-                    self._noise_proc(x_cf, node, t, enc_split=self._enc_split,
-                                     events=events)
-                    events.append("noise")
-                    break
+            # Fix of Bug : skip the noise check when the closest entry is a
+            # graduated liar cluster.  Such entries have a tiny radius (born
+            # from a compact noise buffer), so the noise score would always
+            # fire, preventing genuine cluster members from ever entering the
+            # subtree — starving the cluster until it decays to ~10^-90.
+            # Routing directly into the liar subtree breaks the vicious cycle.
+            if self.noise_threshold <= 1.0:  
+                if not ex.is_noise_promoted:  # Fix (part 1): closest entry
+                    # is a graduated noise cluster → route directly, don't noise-check
+                    np_score = self._noise_prob_from_ranked(x_ranked)  # Fix of Bug C
+                    if np_score >= self.noise_threshold:
+                        self._noise_proc(x_cf, node, t, enc_split=self._enc_split,
+                                         events=events)
+                        events.append("noise")
+                        break
 
-            # Fix of Bug A: add hitchhiker to ex.summary here, after noise
+            # add hitchhiker to ex.summary here, after noise
             # check passes — mirrors paper Algorithm 1 line 19 which adds
             # both x and h to ex only once noise is ruled out.
             if h is not None and eh is ex:
@@ -189,9 +203,17 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
     def _noise_prob_from_ranked(self, ranked: list) -> float:
         """Compute noise probability reusing distances from _rank_entries_by_distance.
 
-        Fix of Bug C: avoids redundant self._dist calls by using the
+        avoids redundant self._dist calls by using the
         (distance, entry) pairs already computed during entry selection
         instead of recomputing dist(x, mu_e) for every entry again.
+
+        entries born from noise-buffer graduation
+        (``is_noise_promoted=True``) are excluded from the ratio computation.
+        Their CF radius equals the noise-buffer radius at graduation time —
+        typically far smaller than a mature cluster's radius — so including
+        them in the min() would inflate the noise score and prevent genuine
+        cluster members from passing the check, even when those members are
+        closest to a *regular* (non-promoted) entry.
 
         Mirrors noise_probability() from noise_handler.py but takes the
         pre-ranked list instead of a dist_fn.
@@ -199,6 +221,20 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
         min_ratio = float("inf")
         for d, e in ranked:
             if e.summary.is_empty():
+                continue
+            # Fix of Bug(part 2): skip noise-promoted entries so their tight
+            # graduation radius does not dominate the noise score.
+            if e.is_noise_promoted:
+                continue
+            # Fix of Bug (part 3): require a minimum decayed weight before
+            # an entry participates in the noise check.  In a young or
+            # multi-cluster-mixed inner entry the radius is unreliable
+            # (built from a handful of points spanning several clusters),
+            # causing nearly all subsequent points to be mis-classified as
+            # noise.  Only entries with n >= noise_min_weight have a radius
+            # that meaningfully represents a single cluster's spatial extent.
+            # Returns 0.0 (no noise) when no mature entry exists.
+            if e.summary.n < self.noise_min_weight:
                 continue
             r = e.summary.radius()
             if r == 0.0:
@@ -285,7 +321,8 @@ class LiarTree(ClusTree, OverlapHandlerMixin):
             child=None,
             entry_id=self._next_id,
         )
-        self._next_id += 1
+        new_entry.is_noise_promoted = True   # persists after liar
+        self._next_id += 1                   # flag clearing; see _noise_prob_from_ranked
 
         liar_child = self._spawn_liar_root(new_entry, t)
         liar_child.parent = node
