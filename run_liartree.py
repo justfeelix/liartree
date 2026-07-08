@@ -10,8 +10,8 @@ Examples
 # 3-cluster dataset, default settings
 python run_liartree.py --dataset complex9 --n-clusters 9
 
-# Higher budget (slower stream, deeper descent)
-python run_liartree.py --dataset rbf3 --budget 72 --n-clusters 3
+# Deterministic distance-budget interruption (reproducible runs)
+python run_liartree.py --dataset rbf3 --interrupt budget --budget 72 --n-clusters 3
 
 # Disable noise handling (compare with ClusTree baseline)
 python run_liartree.py --dataset complex9 --noise-threshold 2.0
@@ -41,7 +41,13 @@ def build_arg_parser():
                    choices=["complex9", "rbf3", "har", "stream_densired"])
     p.add_argument("--no-scale", action="store_true", help="skip MinMax scaling")
 
-    # anytime load / stream speed
+    # anytime interruption / stream speed
+    p.add_argument("--interrupt", default="time", choices=["time", "budget"],
+                   help="how each insertion is cut off: 'time' (paper, real "
+                        "wall-clock) or 'budget' (deterministic distance-count)")
+    p.add_argument("--time-slice", type=float, default=None,
+                   help="per-object time allowance in seconds for --interrupt "
+                        "time (default: no limit unless --pps paces the stream)")
     p.add_argument("--budget", type=int, default=72,
                    help="distance computations per object "
                         "(low = fast stream, coarse model). "
@@ -57,10 +63,15 @@ def build_arg_parser():
     # tree / ClusTree params
     p.add_argument("--max-fanout", type=int, default=3)
     p.add_argument("--leaf-max", type=int, default=3)
-    p.add_argument("--lam", type=float, default=0.001)
+    p.add_argument("--lambda", dest="lam", type=float, default=0.001)
     p.add_argument("--horizon", type=int, default=1000)
     p.add_argument("--max-height", type=int, default=0,
                    help="cap tree height (0 = unbounded)")
+    p.add_argument("--aggregate", action="store_true",
+                   help="aggregate similar objects before insertion (Sec. 3.3 "
+                        "speed-up for very fast streams)")
+    p.add_argument("--max-aggregates", type=int, default=20,
+                   help="cap on the number of open aggregates")
     p.add_argument("--descent", default="depthfirst",
                    choices=["depthfirst", "breadthfirst",
                             "bestfirst", "iterativedf"])
@@ -105,6 +116,8 @@ def main():
         lam=args.lam,
         horizon=args.horizon,
         descent=args.descent,
+        interrupt=args.interrupt,
+        time_slice=args.time_slice,
         budget=args.budget,
         max_height=args.max_height,
     )
@@ -123,10 +136,12 @@ def main():
         compute_cmm=not args.no_cmm,
         compute_ts=not args.no_ts,
         progress=not args.quiet,
+        aggregate=args.aggregate,
+        max_aggregates=args.max_aggregates,
     )
 
-    print("dataset=%s  points=%d  dim=%d  budget=%d  offline=%s"
-          % (args.dataset, len(X), X.shape[1], args.budget, args.offline))
+    print("dataset=%s  points=%d  dim=%d  interrupt=%s  offline=%s"
+          % (args.dataset, len(X), X.shape[1], args.interrupt, args.offline))
     print("noise_threshold=%.2f  overlap_reduction=%s"
           % (args.noise_threshold, not args.no_overlap))
     sim.run(X, y)

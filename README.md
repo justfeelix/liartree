@@ -1,93 +1,153 @@
-# LiarTree
+# ClusTree and LiarTree
 
+Implementation of the anytime stream-clustering algorithm **ClusTree** and its extension **LiarTree**, integrated with the provided
+baseframework for datasets and evaluation. ClusTree maintains a self-adapting
+hierarchy of micro-clusters that can be interrupted at any time; LiarTree builds
+on it to handle noise, emerging concepts, and overlapping clusters.
 
+## Project Structure
 
-## Getting started
+- `src/microcluster.py`: the cluster feature / micro-cluster `(n, LS, SS)` with
+  time decay, and mean, variance, radius and the additive operations both trees
+  build on.
+- `src/node.py`: the tree building blocks, entries and nodes (including the
+  noise-buffer and liar-node slots used by LiarTree).
+- `src/clustree.py`: the ClusTree online phase, anytime insertion (buffer and
+  hitchhiker), decay, split / merge / discard, the four descent strategies, and
+  the fast-stream aggregation hook.
+- `src/liartree.py`: the LiarTree online phase, extends ClusTree with noise
+  handling, novelty growth, and overlap reduction.
+- `src/noise_handler.py`: the LiarTree noise math (noise probability, density,
+  and the Gompertz noise-to-cluster test).
+- `src/overlap_handler.py`: the local overlap look-ahead and child-entry swap
+  used during LiarTree descent.
+- `src/offline.py`: the offline phase, re-clusters the leaf micro-clusters with
+  scikit-learn k-Means or DBSCAN.
+- `src/stream_runner.py`: baseframework integration (dataset loading, CMM and
+  Temporal Silhouette metrics) plus the `StreamRunner` that streams a dataset
+  through a tree, handles the anytime stop, and runs the offline phase.
+- `run_clustree.py`: root runner for ClusTree.
+- `run_liartree.py`: root runner for LiarTree.
+- `evaluation/`: parameter and stream-rate sweep scripts and notebooks used for
+  the experiments.
+- `tests/`: unit tests for the offline phase and the overlap logic.
+- `baseframework/`: provided framework code, datasets, and metrics reused by
+  this implementation.
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## Setup
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+Clone the repository with the submodule and create the local virtual
+environment:
 
-## Add your files
-
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
+```bash
+git submodule update --init --recursive
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
-cd existing_repo
-git remote add origin https://gitlab2.cip.ifi.lmu.de/dbs_sep/dbs_streamclustering26/block4/liartree.git
-git branch -M main
-git push -uf origin main
-```
 
-## Integrate with your tools
-
-* [Set up project integrations](https://gitlab2.cip.ifi.lmu.de/dbs_sep/dbs_streamclustering26/block4/liartree/-/settings/integrations)
-
-## Collaborate with your team
-
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
-
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+`requirements.txt` simply pulls in the baseframework's pinned dependencies; no
+extra packages are needed.
 
 ## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+Run ClusTree on one of the provided baseframework datasets:
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+```bash
+python run_clustree.py --dataset complex9
+```
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+Run LiarTree on the same dataset:
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+```bash
+python run_liartree.py --dataset complex9
+```
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+Both runners stream the full dataset, print progress while running, and report
+the baseframework metrics after the offline phase. Press `Ctrl+C` at any time to
+stop the stream early and still get the offline result.
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+Examples with explicit parameters:
 
-## License
-For open source projects, say how it is licensed.
+```bash
+python run_clustree.py \
+	--dataset complex9 \
+	--interrupt time \
+	--descent depthfirst \
+	--offline kmeans --n-clusters 9
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+python run_liartree.py \
+	--dataset complex9 \
+	--noise-threshold 0.5 \
+	--offline kmeans --n-clusters 9
+```
+
+Available datasets:
+
+- `complex9`
+- `stream_densired`
+- `rbf3`
+- `har`
+
+### Anytime interruption
+
+The online insertion is interruptible, as in the paper. Both runners expose the
+mode:
+
+- `--interrupt time` (default, the paper's behavior): each insertion stops when
+  the next object arrives (its arrival time is used as the deadline) or after
+  `--time-slice` seconds. This is what makes it usable on a live stream.
+- `--interrupt budget`: stop after a fixed number of distance computations
+  (`--budget`). Deterministic and machine-independent, useful for reproducible
+  runs.
+
+`--pps` feeds the stream at a real rate (points per second); in time mode it
+sets each object's deadline. `--stop-after N` stops after `N` seconds and runs
+the offline phase (`-1` = whole dataset).
+
+### Common parameters (both runners)
+
+- `--dataset`: dataset to stream (see the list above).
+- `--budget`: distance computations per object for the budget interruption mode
+  (default `36` for ClusTree; `72` for LiarTree, whose overlap look-ahead does
+  more distance work per node).
+- `--pps`: feed rate in points per second (`0` = as fast as possible).
+- `--stop-after`: stop after N seconds and run the offline phase (`-1` = all).
+- `--descent`: `depthfirst` (default), `breadthfirst`, `bestfirst`, or
+  `iterativedf`.
+- `--max-fanout`, `--leaf-max`: inner-node and leaf capacities (default `3`).
+- `--lambda`: decay rate. Default `0.001`.
+- `--horizon`: snapshot interval used by the discard rule. Default `1000`.
+- `--max-height`: cap on tree height (`0` = unbounded); once reached, the model
+  size stops growing.
+- `--no-scale`: disable the baseframework's min-max scaling.
+
+### Fast-stream aggregation (both runners)
+
+- `--aggregate`, `--max-aggregates`: enable the fast-stream aggregation, in which
+  a separate thread groups similar objects into aggregates while insertion runs,
+  so each insertion can descend deeper on a very fast stream.
+
+### LiarTree-only parameters (`run_liartree.py`)
+
+- `--noise-threshold`: noise probability threshold (Def. 2); lower is more
+  aggressive noise detection, and a value above `1` disables noise handling.
+  Default `0.5`.
+- `--no-overlap`: disable the local overlap reduction, falling back to
+  ClusTree's greedy entry selection.
+
+### Offline phase and metrics (both runners)
+
+- `--offline`: `kmeans` (default) or `dbscan`.
+- `--n-clusters`: `k` for k-Means.
+- `--eps`, `--min-samples`: DBSCAN parameters.
+- `--unweighted`: do not weight the offline clustering by micro-cluster weight.
+- `--seed`: random seed for the offline clustering.
+- `--no-cmm`, `--no-ts`: skip the CMM or Temporal Silhouette metric.
+- `--quiet`: suppress the progress lines while streaming.
+
+## Tests
+
+```bash
+python -m unittest discover -s tests -t .
+```
