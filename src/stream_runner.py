@@ -181,7 +181,7 @@ class StreamRunner:
                     time.sleep(0.0005)     # idle: wait for the aggregation thread
                     continue
                 self.online.insert_cf(cf, t=max(self._arrived, 1))
-                buffer.maxradius = self.online.avg_leaf_radius()
+                buffer.maxradius = self.online.maxradius_from_leaves()
                 if self.progress and self._arrived - last_report >= report_every:
                     last_report = self._arrived
                     self._progress(self._arrived, len(X), start,

@@ -131,18 +131,21 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
         self._deadline = None
         return self._insert(cf, t)
 
-    def avg_leaf_radius(self):
-        """Average radius over the current leaf entries (Sec. 3.3 maxradius)."""
-        radii = []
+    def maxradius_from_leaves(self):
+        """Sec. 3.3 maxradius: the square root of the average leaf variance. The
+        paper says 'average variance of the leaves'; the sqrt is only there
+        because maxradius is compared against a Euclidean distance (a length,
+        not a length squared)."""
+        variances = []
         stack = [self.root]
         while stack:
             nd = stack.pop()
             if nd.is_leaf:
-                radii.extend(e.summary.radius() for e in nd.entries
-                             if not e.summary.is_empty())
+                variances.extend(float(e.summary.variance().sum())
+                                 for e in nd.entries if not e.summary.is_empty())
             else:
                 stack.extend(e.child for e in nd.entries if e.child)
-        return float(np.mean(radii)) if radii else 0.0
+        return float(np.sqrt(np.mean(variances))) if variances else 0.0
 
     def get_summary(self):
         """Leaf-level micro-clustering as {id: {position, radius, weight}}."""
