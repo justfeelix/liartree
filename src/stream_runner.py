@@ -114,14 +114,19 @@ class StreamRunner:
                 signal.signal(signal.SIGINT, prev_handler)
 
     def _stream_plain(self, X):
-        """One object per learn_one, budget-limited anytime insertion."""
+        """One object per learn_one. When the stream is paced (pps > 0) the
+        object's insertion is cut off at the next object's arrival, which is the
+        paper's interruption; the tree decides how to honor that (time budget)."""
         delay = 1.0 / self.pps if self.pps and self.pps > 0 else 0.0
         report_every = max(1, len(X) // 20)
         start = time.perf_counter()
         n = 0
         try:
             for i in range(len(X)):
-                self.online.learn_one(X[i], t=i + 1)
+                # on a paced stream, the next object arrives at this time, so the
+                # current insertion must stop by then
+                deadline = start + (i + 1) * delay if delay else None
+                self.online.learn_one(X[i], t=i + 1, deadline=deadline)
                 n = i + 1
                 if self.progress and n % report_every == 0:
                     self._progress(n, len(X), start)
@@ -132,7 +137,9 @@ class StreamRunner:
                     print("stopping: %.2fs elapsed" % (time.perf_counter() - start))
                     break
                 if delay:
-                    time.sleep(delay)
+                    remaining = deadline - time.perf_counter()
+                    if remaining > 0:
+                        time.sleep(remaining)
         except KeyboardInterrupt:   # fallback when not on the main thread
             self._stop = True
             print("\nstopping: interrupted (Ctrl+C)")

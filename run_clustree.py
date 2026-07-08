@@ -22,12 +22,18 @@ def build_arg_parser():
                    choices=["complex9", "rbf3", "har", "stream_densired"])
     p.add_argument("--no-scale", action="store_true", help="skip MinMax scaling")
 
-    # anytime load / stream speed
+    # anytime interruption / stream speed
+    p.add_argument("--interrupt", default="time", choices=["time", "budget"],
+                   help="how each insertion is cut off: 'time' (paper, real "
+                        "wall-clock) or 'budget' (deterministic distance-count)")
+    p.add_argument("--time-slice", type=float, default=None,
+                   help="per-object time allowance in seconds for --interrupt "
+                        "time (default: no limit unless --pps paces the stream)")
     p.add_argument("--budget", type=int, default=36,
-                   help="distance computations allowed per object (low = fast "
-                        "stream, coarse model)")
+                   help="distance computations per object for --interrupt budget")
     p.add_argument("--pps", type=float, default=0.0,
-                   help="points per second to feed in real time (0 = unbounded)")
+                   help="points per second to feed in real time (0 = unbounded); "
+                        "with --interrupt time this sets each object's deadline")
     p.add_argument("--stop-after", type=float, default=-1.0,
                    help="stop after X seconds and run the offline phase "
                         "(-1 = whole dataset; Ctrl+C also stops)")
@@ -72,6 +78,7 @@ def main():
     X, y = load_dataset(args.dataset, scale=not args.no_scale)
     tree = ClusTree(max_fanout=args.max_fanout, leaf_capacity_max=args.leaf_max,
                     lam=args.lam, horizon=args.horizon, descent=args.descent,
+                    interrupt=args.interrupt, time_slice=args.time_slice,
                     budget=args.budget, max_height=args.max_height)
     offline = OfflineClusterer(method=args.offline, n_clusters=args.n_clusters,
                                eps=args.eps, min_samples=args.min_samples,
@@ -81,8 +88,8 @@ def main():
                           progress=not args.quiet,
                           aggregate=args.aggregate, max_aggregates=args.max_aggregates)
 
-    print("dataset=%s points=%d dim=%d budget=%d offline=%s"
-          % (args.dataset, len(X), X.shape[1], args.budget, args.offline))
+    print("dataset=%s points=%d dim=%d interrupt=%s offline=%s"
+          % (args.dataset, len(X), X.shape[1], args.interrupt, args.offline))
     sim.run(X, y)
 
 

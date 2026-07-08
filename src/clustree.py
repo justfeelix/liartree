@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import heapq
 import itertools
+import time
 
 import numpy as np
 
@@ -36,8 +37,14 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
     lam : decay rate of omega(t) = 2^(-lambda*t) (Sec. 3.2).
     horizon : snapshot interval t_snap for the discard rule (Eq. 1).
     descent : one of depthfirst / breadthfirst / bestfirst / iterativedf.
-    budget : max distance computations per object (low = fast stream). The
-        LiarTree uses the same unit, so the two stay comparable.
+    interrupt : how the anytime insertion is cut off (default "time", as in the
+        paper): "time" stops when the per-object time slice elapses or a
+        wall-clock deadline (the next object's arrival) is reached; "budget"
+        stops after a fixed number of distance computations (deterministic and
+        machine-independent, handy for reproducible runs).
+    time_slice : per-object time allowance in seconds for interrupt="time"
+        (None = no limit unless a deadline is passed to learn_one).
+    budget : distance computations per object for interrupt="budget".
     max_height : cap on tree height (0 = unbounded). Once reached, leaf overflow
         merges instead of splitting, so the model size stops growing.
 
@@ -47,9 +54,12 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
 
     def __init__(self, max_fanout=3, min_fanout=1, leaf_capacity_max=3,
                  leaf_capacity_min=1, lam=0.001, horizon=1000,
-                 descent="depthfirst", budget=36, max_height=0):
+                 descent="depthfirst", interrupt="time", time_slice=None,
+                 budget=36, max_height=0):
         if descent not in _DESCENTS:
             raise ValueError("descent must be one of %s" % (_DESCENTS,))
+        if interrupt not in ("time", "budget"):
+            raise ValueError("interrupt must be 'time' or 'budget'")
         self.max_fanout = max_fanout
         self.min_fanout = min_fanout
         self.leaf_max = leaf_capacity_max
@@ -57,6 +67,8 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
         self.lam = lam
         self.horizon = horizon
         self.descent = descent
+        self.interrupt = interrupt
+        self.time_slice = time_slice
         self.budget = budget
         self.max_height = max_height
 
@@ -67,11 +79,14 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
         self._dim = None
         self._dist_used = 0
         self._cur_budget = budget
+        self._deadline = None
         self._height = 1
 
-    def learn_one(self, x, t=None):
+    def learn_one(self, x, t=None, deadline=None):
         """Insert one object. Returns (summary_id, cluster_id, event_log) as the
-        baseframework expects."""
+        baseframework expects. deadline is an optional wall-clock time
+        (time.perf_counter) by which insertion must stop; on a live stream pass
+        the next object's arrival time here (the paper's interruption)."""
         if t is None:
             t = self._time + 1
         self._time = t
@@ -81,9 +96,19 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
             self._dim = x.size
         x_cf = MicroCluster.from_point(x, t)
 
-        self._cur_budget = self.budget
-        self._dist_used = 0
+        self._begin_insertion(deadline)
         return self._insert(x_cf, t)
+
+    def _begin_insertion(self, deadline=None):
+        """Reset the per-object interruption state for the chosen mode."""
+        self._dist_used = 0
+        self._cur_budget = self.budget
+        if self.interrupt == "time" and deadline is not None:
+            self._deadline = deadline
+        elif self.interrupt == "time" and self.time_slice is not None:
+            self._deadline = time.perf_counter() + self.time_slice
+        else:
+            self._deadline = None
 
     def _insert(self, cf, t):
         if self.descent == "depthfirst":
@@ -103,6 +128,7 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
         cf.decay(t, self.lam)           # bring the aggregate to the current time
         self._cur_budget = float("inf")
         self._dist_used = 0
+        self._deadline = None
         return self._insert(cf, t)
 
     def avg_leaf_radius(self):
@@ -326,6 +352,8 @@ class ClusTree(stream_clustering.OnlinePhase_StreamClusterer):
         return utils.distance_calc(a, b)
 
     def _time_is_up(self):
+        if self.interrupt == "time":
+            return self._deadline is not None and time.perf_counter() >= self._deadline
         return self._dist_used >= self._cur_budget
 
     def _on_descend(self, node, t):
