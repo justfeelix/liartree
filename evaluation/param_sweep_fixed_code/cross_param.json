@@ -1,0 +1,63 @@
+[
+  {
+    "cmm": 0.997601818479075,
+    "f1": 0.8960000000000001,
+    "purity": 0.9966666666666667,
+    "n_clusters": 16,
+    "n_microclusters": 2745,
+    "elapsed": 1.9219937324523926,
+    "params": {
+      "lam": 0.1,
+      "eps": 0.022021,
+      "min_samples": 6,
+      "noise_threshold": 1.16085
+    },
+    "algorithm": "liartree",
+    "param_src": "liartree"
+  },
+  {
+    "cmm": 0.6204524480082464,
+    "f1": 0.2011245847745213,
+    "purity": 0.55,
+    "n_clusters": 8,
+    "n_microclusters": 10,
+    "elapsed": 0.39685511589050293,
+    "params": {
+      "lam": 0.0005,
+      "eps": 0.024218,
+      "min_samples": 1
+    },
+    "algorithm": "liartree",
+    "param_src": "clustree"
+  },
+  {
+    "cmm": 0.9939611163846485,
+    "f1": 0.8953103448275861,
+    "purity": 0.9933333333333333,
+    "n_clusters": 12,
+    "n_microclusters": 2885,
+    "elapsed": 0.9740393161773682,
+    "params": {
+      "lam": 0.1,
+      "eps": 0.022021,
+      "min_samples": 6
+    },
+    "algorithm": "clustree",
+    "param_src": "liartree"
+  },
+  {
+    "cmm": 1.0,
+    "f1": 1.0,
+    "purity": 1.0,
+    "n_clusters": 9,
+    "n_microclusters": 2337,
+    "elapsed": 1.2794623374938965,
+    "params": {
+      "lam": 0.0005,
+      "eps": 0.024218,
+      "min_samples": 1
+    },
+    "algorithm": "clustree",
+    "param_src": "clustree"
+  }
+]

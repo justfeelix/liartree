@@ -3,3 +3,7 @@
 __pycache__/
 *.pyc
 .DS_Store
+# data (downloaded separately, see README) and scratch copies
+data/
+large-datasets/
+* copy*.ipynb

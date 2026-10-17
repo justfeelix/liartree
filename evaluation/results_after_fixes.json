@@ -1,0 +1,142 @@
+[
+  {
+    "algorithm": "liartree",
+    "dataset": "complex9_noise10",
+    "cmm": 0.5489961488679114,
+    "f1": 0.07784408539929656,
+    "purity": 0.337,
+    "n_clusters": 2,
+    "n_microclusters": 31,
+    "error": null
+  },
+  {
+    "algorithm": "liartree",
+    "dataset": "complex9",
+    "cmm": 0.9875758278357871,
+    "f1": 0.886144026144254,
+    "purity": 0.9825,
+    "n_clusters": 14,
+    "n_microclusters": 2829,
+    "error": null
+  },
+  {
+    "algorithm": "liartree",
+    "dataset": "complex9_noise50",
+    "cmm": 0.9508672212393485,
+    "f1": 0.06688851913477536,
+    "purity": 0.5025,
+    "n_clusters": 7,
+    "n_microclusters": 10,
+    "error": null
+  },
+  {
+    "algorithm": "liartree",
+    "dataset": "complex9_noise30",
+    "cmm": 0.8048022386265535,
+    "f1": 0.6286079973242139,
+    "purity": 0.646,
+    "n_clusters": 12,
+    "n_microclusters": 3522,
+    "error": null
+  },
+  {
+    "algorithm": "liartree",
+    "dataset": "complex9_noise20",
+    "cmm": 0.8984566541523434,
+    "f1": 0.41612608213981644,
+    "purity": 0.529,
+    "n_clusters": 9,
+    "n_microclusters": 2595,
+    "error": null
+  },
+  {
+    "algorithm": "clustree",
+    "dataset": "complex9",
+    "cmm": 1.0,
+    "f1": 1.0,
+    "purity": 1.0,
+    "n_clusters": 15,
+    "n_microclusters": 2335,
+    "error": null
+  },
+  {
+    "algorithm": "clustree",
+    "dataset": "complex9_noise10",
+    "cmm": 0.9494477550772498,
+    "f1": 0.6145000953278449,
+    "purity": 0.89,
+    "n_clusters": 11,
+    "n_microclusters": 2487,
+    "error": null
+  },
+  {
+    "algorithm": "liartree",
+    "dataset": "complex9_noise40",
+    "cmm": 0.952805576716476,
+    "f1": 0.057040743388134384,
+    "purity": 0.399,
+    "n_clusters": 4,
+    "n_microclusters": 3561,
+    "error": null
+  },
+  {
+    "algorithm": "clustree",
+    "dataset": "complex9_noise20",
+    "cmm": 0.8319469589749439,
+    "f1": 0.47103048102112766,
+    "purity": 0.713,
+    "n_clusters": 8,
+    "n_microclusters": 3157,
+    "error": null
+  },
+  {
+    "algorithm": "clustree",
+    "dataset": "complex9_noise30",
+    "cmm": 0.9317121549508045,
+    "f1": 0.0408738548273432,
+    "purity": 0.29,
+    "n_clusters": 3,
+    "n_microclusters": 2853,
+    "error": null
+  },
+  {
+    "algorithm": "clustree",
+    "dataset": "complex9_noise50",
+    "cmm": 0.5106467988000447,
+    "f1": 0.14517957007227392,
+    "purity": 0.273,
+    "n_clusters": 14,
+    "n_microclusters": 5340,
+    "error": null
+  },
+  {
+    "algorithm": "liartree",
+    "dataset": "stream_densired",
+    "cmm": 0.5412826586751588,
+    "f1": 0.13174486803519062,
+    "purity": 0.3155,
+    "n_clusters": 3,
+    "n_microclusters": 9487,
+    "error": null
+  },
+  {
+    "algorithm": "clustree",
+    "dataset": "complex9_noise40",
+    "cmm": 0.7313810690951472,
+    "f1": 0.4861325027690434,
+    "purity": 0.525,
+    "n_clusters": 10,
+    "n_microclusters": 4106,
+    "error": null
+  },
+  {
+    "algorithm": "clustree",
+    "dataset": "stream_densired",
+    "cmm": 0.4422862018192095,
+    "f1": 0.4476540355496553,
+    "purity": 0.3315,
+    "n_clusters": 20,
+    "n_microclusters": 9039,
+    "error": null
+  }
+]

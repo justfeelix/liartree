@@ -1,0 +1,29 @@
+{
+  "liartree": {
+    "cmm": 0.997601818479075,
+    "f1": 0.8960000000000001,
+    "purity": 0.9966666666666667,
+    "n_clusters": 16,
+    "n_microclusters": 2745,
+    "elapsed": 3.1656949520111084,
+    "params": {
+      "lam": 0.1,
+      "eps": 0.022021,
+      "min_samples": 6,
+      "noise_threshold": 1.16085
+    }
+  },
+  "clustree": {
+    "cmm": 1.0,
+    "f1": 1.0,
+    "purity": 1.0,
+    "n_clusters": 9,
+    "n_microclusters": 2337,
+    "elapsed": 0.9702293872833252,
+    "params": {
+      "lam": 0.0005,
+      "eps": 0.024218,
+      "min_samples": 1
+    }
+  }
+}

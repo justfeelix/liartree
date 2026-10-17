@@ -1,0 +1,210 @@
+{
+  "liartree_lam_sweep": [
+    {
+      "cmm": 0.9721412033706094,
+      "f1": 0.8828618355856783,
+      "purity": 0.97,
+      "n_clusters": 28,
+      "n_microclusters": 2324,
+      "elapsed": 3.1891252994537354,
+      "params": {
+        "lam": 0.001,
+        "eps": 0.022021,
+        "min_samples": 6,
+        "noise_threshold": 1.16085
+      }
+    },
+    {
+      "cmm": 0.984310504495624,
+      "f1": 0.8880470202522928,
+      "purity": 0.9833333333333333,
+      "n_clusters": 22,
+      "n_microclusters": 2379,
+      "elapsed": 3.1619865894317627,
+      "params": {
+        "lam": 0.003,
+        "eps": 0.022021,
+        "min_samples": 6,
+        "noise_threshold": 1.16085
+      }
+    },
+    {
+      "cmm": 0.9893489424589551,
+      "f1": 0.8886387362286239,
+      "purity": 0.9866666666666667,
+      "n_clusters": 16,
+      "n_microclusters": 2624,
+      "elapsed": 2.3702094554901123,
+      "params": {
+        "lam": 0.01,
+        "eps": 0.022021,
+        "min_samples": 6,
+        "noise_threshold": 1.16085
+      }
+    },
+    {
+      "cmm": 0.9939611163846485,
+      "f1": 0.8947012987012986,
+      "purity": 0.9933333333333333,
+      "n_clusters": 12,
+      "n_microclusters": 2848,
+      "elapsed": 2.7370262145996094,
+      "params": {
+        "lam": 0.03,
+        "eps": 0.022021,
+        "min_samples": 6,
+        "noise_threshold": 1.16085
+      }
+    },
+    {
+      "cmm": 0.997601818479075,
+      "f1": 0.8960000000000001,
+      "purity": 0.9966666666666667,
+      "n_clusters": 16,
+      "n_microclusters": 2745,
+      "elapsed": 3.1656949520111084,
+      "params": {
+        "lam": 0.1,
+        "eps": 0.022021,
+        "min_samples": 6,
+        "noise_threshold": 1.16085
+      }
+    },
+    {
+      "cmm": 0.9941006241379551,
+      "f1": 0.8947012987012986,
+      "purity": 0.9933333333333333,
+      "n_clusters": 16,
+      "n_microclusters": 2841,
+      "elapsed": 1.7317571640014648,
+      "params": {
+        "lam": 0.2,
+        "eps": 0.022021,
+        "min_samples": 6,
+        "noise_threshold": 1.16085
+      }
+    },
+    {
+      "cmm": 0.997601818479075,
+      "f1": 0.8960000000000001,
+      "purity": 0.9966666666666667,
+      "n_clusters": 13,
+      "n_microclusters": 2829,
+      "elapsed": 1.7825522422790527,
+      "params": {
+        "lam": 0.246,
+        "eps": 0.022021,
+        "min_samples": 6,
+        "noise_threshold": 1.16085
+      }
+    },
+    {
+      "cmm": 0.9060735672031369,
+      "f1": 0.8554603999225737,
+      "purity": 0.9033333333333333,
+      "n_clusters": 19,
+      "n_microclusters": 2820,
+      "elapsed": 1.6321794986724854,
+      "params": {
+        "lam": 0.4,
+        "eps": 0.022021,
+        "min_samples": 6,
+        "noise_threshold": 1.16085
+      }
+    },
+    {
+      "cmm": 0.2921863251483886,
+      "f1": 0.4069354878703618,
+      "purity": 0.2833333333333333,
+      "n_clusters": 40,
+      "n_microclusters": 2902,
+      "elapsed": 1.974653720855713,
+      "params": {
+        "lam": 0.8,
+        "eps": 0.022021,
+        "min_samples": 6,
+        "noise_threshold": 1.16085
+      }
+    }
+  ],
+  "clustree_lam_sweep": [
+    {
+      "cmm": 1.0,
+      "f1": 1.0,
+      "purity": 1.0,
+      "n_clusters": 9,
+      "n_microclusters": 2337,
+      "elapsed": 0.9702293872833252,
+      "params": {
+        "lam": 0.0005,
+        "eps": 0.024218,
+        "min_samples": 1
+      }
+    },
+    {
+      "cmm": 1.0,
+      "f1": 1.0,
+      "purity": 1.0,
+      "n_clusters": 11,
+      "n_microclusters": 2339,
+      "elapsed": 0.8925800323486328,
+      "params": {
+        "lam": 0.00145,
+        "eps": 0.024218,
+        "min_samples": 1
+      }
+    },
+    {
+      "cmm": 1.0,
+      "f1": 1.0,
+      "purity": 1.0,
+      "n_clusters": 10,
+      "n_microclusters": 2440,
+      "elapsed": 0.8872170448303223,
+      "params": {
+        "lam": 0.003,
+        "eps": 0.024218,
+        "min_samples": 1
+      }
+    },
+    {
+      "cmm": 1.0,
+      "f1": 1.0,
+      "purity": 1.0,
+      "n_clusters": 9,
+      "n_microclusters": 2625,
+      "elapsed": 0.9606368541717529,
+      "params": {
+        "lam": 0.01,
+        "eps": 0.024218,
+        "min_samples": 1
+      }
+    },
+    {
+      "cmm": 1.0,
+      "f1": 1.0,
+      "purity": 1.0,
+      "n_clusters": 9,
+      "n_microclusters": 2838,
+      "elapsed": 1.001863956451416,
+      "params": {
+        "lam": 0.03,
+        "eps": 0.024218,
+        "min_samples": 1
+      }
+    },
+    {
+      "cmm": 1.0,
+      "f1": 1.0,
+      "purity": 1.0,
+      "n_clusters": 9,
+      "n_microclusters": 2885,
+      "elapsed": 0.9994480609893799,
+      "params": {
+        "lam": 0.1,
+        "eps": 0.024218,
+        "min_samples": 1
+      }
+    }
+  ]
+}
