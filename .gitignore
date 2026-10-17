@@ -7,3 +7,5 @@ __pycache__/
 data/
 large-datasets/
 * copy*.ipynb
+*.lock*
+*.db-journal
